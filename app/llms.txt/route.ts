@@ -10,9 +10,19 @@ export async function GET() {
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
   const weekPath = weekPagePath(snapshot.window.to)
+  const open = snapshot.picks.open
   const picks = [
-    value ? `- ZDR + no-training value: ${value.name} (${value.id})` : null,
+    value ? `- Bang: ${value.name} (${value.id})` : null,
+    open.workhorse
+      ? `- Workhorse: ${open.workhorse.name} (${open.workhorse.id})`
+      : null,
+    open.cheapRouter
+      ? `- Cheap: ${open.cheapRouter.name} (${open.cheapRouter.id})`
+      : null,
     frontier ? `- Frontier: ${frontier.name} (${frontier.id})` : null,
+    open.rising
+      ? `- Rising: ${open.rising.name} (${open.rising.id})`
+      : null,
   ]
     .filter((line): line is string => line != null)
     .join("\n")
@@ -26,7 +36,7 @@ ${picks}
 
 ## Pages
 
-- [This week's picks](${siteUrl("/")}): Current ZDR + no-training and bang-for-buck defaults
+- [This week's picks](${siteUrl("/")}): Current weekly picks on AI Gateway
 - [Methodology](${siteUrl("/methodology")}): How value, bang, ZDR, and capable-model filters work
 - [This week archive](${siteUrl(weekPath)}): Snapshot for ${window}
 
@@ -40,6 +50,7 @@ ${picks}
 
 - Catalog: ${snapshot.sources.catalog}
 - DeepsecBench: ${snapshot.sources.deepsec}
+- Artificial Analysis: ${snapshot.sources.aa}
 - ${snapshot.attribution.text}
 - License: ${snapshot.attribution.licenseUrl}
 `

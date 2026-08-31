@@ -4,13 +4,20 @@ import { useState } from "react"
 
 import { CopyModelId } from "@/components/copy-model-id"
 import { ProviderIcon } from "@/components/provider-icon"
-import { blendOf, money, pct, score } from "@/lib/format"
+import { pct } from "@/lib/format"
 import type {
   GatewaySnapshot,
   SnapshotLaneKey,
   SnapshotModel,
 } from "@/lib/gateway-snapshot"
-import { laneTitle, policyLabel } from "@/lib/picks"
+import {
+  laneTitle,
+  ledgerBangMetric,
+  ledgerBlendMetric,
+  ledgerScoreMetric,
+  policyLabel,
+  type LedgerMetric,
+} from "@/lib/picks"
 import { cn } from "@/lib/utils"
 
 type LedgerKey =
@@ -21,15 +28,16 @@ type LedgerKey =
   | "tokenShare"
   | "spendShare"
 
-const FILTERS: { key: LedgerKey; label: string; share: "tokens" | "spend" }[] =
-  [
-    { key: "deepsecBang", label: "Bang", share: "tokens" },
-    { key: "deepsecScore", label: "Score", share: "tokens" },
-    { key: "discounted", label: "On sale", share: "tokens" },
-    { key: "cheapCapable", label: "Cheap", share: "tokens" },
-    { key: "tokenShare", label: "Tokens", share: "tokens" },
-    { key: "spendShare", label: "Spend", share: "spend" },
-  ]
+type LedgerShare = "tokens" | "spend"
+
+const FILTERS: { key: LedgerKey; label: string; share?: LedgerShare }[] = [
+  { key: "deepsecBang", label: "Bang" },
+  { key: "deepsecScore", label: "Score" },
+  { key: "discounted", label: "On sale" },
+  { key: "cheapCapable", label: "Cheap" },
+  { key: "tokenShare", label: "Tokens", share: "tokens" },
+  { key: "spendShare", label: "Spend", share: "spend" },
+]
 
 const LANES: { key: SnapshotLaneKey; label: string }[] = [
   { key: "privacy", label: "ZDR+NPT" },
@@ -37,8 +45,12 @@ const LANES: { key: SnapshotLaneKey; label: string }[] = [
 ]
 
 const MAX_ROWS = 12
-const LEDGER_GRID =
-  "grid grid-cols-[minmax(0,1.6fr)_4.5rem_4.25rem] sm:grid-cols-[1.7fr_0.6fr_0.5fr_0.5fr_0.55fr]"
+
+function ledgerGrid(showShare: boolean): string {
+  return showShare
+    ? "grid grid-cols-[minmax(0,1.6fr)_4.75rem_3.75rem] sm:grid-cols-[minmax(0,1.7fr)_5.5rem_4.75rem_4.75rem_3.75rem]"
+    : "grid grid-cols-[minmax(0,1.6fr)_4.75rem] sm:grid-cols-[minmax(0,1.7fr)_5.5rem_4.75rem_4.75rem]"
+}
 
 export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
   const [lane, setLane] = useState<SnapshotLaneKey>("privacy")
@@ -46,10 +58,13 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
   const active =
     FILTERS.find((item) => item.key === filter) ??
     FILTERS[0] ??
-    ({ key: "deepsecBang", label: "Bang", share: "tokens" } as const)
+    ({ key: "deepsecBang", label: "Bang" } as const)
   const laneLists = lists[lane]
   const rows = laneLists[filter].slice(0, MAX_ROWS)
   const showPolicy = lane === "open"
+  const share = active.share
+  const showShare = share != null
+  const grid = ledgerGrid(showShare)
 
   return (
     <section className="flex flex-col gap-1">
@@ -127,7 +142,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
         <div>
           <div
             className={cn(
-              LEDGER_GRID,
+              grid,
               "border-b border-line px-3 py-2 text-[11.5px] font-medium text-ink-3"
             )}
           >
@@ -135,9 +150,11 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
             <span className="text-right">Blend</span>
             <span className="hidden text-right sm:block">Score</span>
             <span className="hidden text-right sm:block">Bang</span>
-            <span className="text-right">
-              {active.share === "spend" ? "Spend" : "Tokens"}
-            </span>
+            {showShare ? (
+              <span className="text-right">
+                {share === "spend" ? "Spend" : "Tokens"}
+              </span>
+            ) : null}
           </div>
           {rows.length === 0 ? (
             <p className="px-3 py-6 text-[12.5px] text-ink-3">
@@ -148,8 +165,9 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
               <LedgerRow
                 key={`${lane}-${filter}-${model.id}`}
                 model={model}
-                share={active.share}
+                share={share}
                 showPolicy={showPolicy}
+                showShare={showShare}
               />
             ))
           )}
@@ -163,18 +181,22 @@ function LedgerRow({
   model,
   share,
   showPolicy,
+  showShare,
 }: {
   model: SnapshotModel
-  share: "tokens" | "spend"
+  share: LedgerShare | undefined
   showPolicy: boolean
+  showShare: boolean
 }) {
-  const blend = blendOf(model)
+  const blend = ledgerBlendMetric(model)
+  const score = ledgerScoreMetric(model)
+  const bang = ledgerBangMetric(model)
   const shareValue = share === "spend" ? model.spendShare : model.tokensShare
 
   return (
     <div
       className={cn(
-        LEDGER_GRID,
+        ledgerGrid(showShare),
         "items-center border-b border-line px-3 py-2 text-[12px] last:border-0"
       )}
     >
@@ -204,16 +226,35 @@ function LedgerRow({
           </span>
         </span>
       </span>
-      <span className="text-right text-ink-2 tabular-nums">{money(blend)}</span>
-      <span className="hidden text-right text-ink-2 tabular-nums sm:block">
-        {score(model.deepsecScore)}
-      </span>
-      <span className="hidden text-right text-ink-2 tabular-nums sm:block">
-        {score(model.deepsecBang, 2)}
-      </span>
-      <span className="text-right text-ink-2 tabular-nums">
-        {pct(shareValue)}
-      </span>
+      <MetricCell metric={blend} />
+      <MetricCell className="hidden sm:block" metric={score} />
+      <MetricCell className="hidden sm:block" metric={bang} />
+      {showShare ? (
+        <span className="text-right text-ink-2 tabular-nums">
+          {pct(shareValue)}
+        </span>
+      ) : null}
     </div>
+  )
+}
+
+function MetricCell({
+  metric,
+  className,
+}: {
+  metric: LedgerMetric
+  className?: string
+}) {
+  return (
+    <span className={cn("min-w-0 text-right", className)}>
+      <span className="block truncate text-ink-2 tabular-nums">
+        {metric.value}
+      </span>
+      {metric.note != null ? (
+        <span className="block truncate text-[11px] text-ink-3">
+          {metric.note}
+        </span>
+      ) : null}
+    </span>
   )
 }

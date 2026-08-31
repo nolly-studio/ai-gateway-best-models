@@ -8,6 +8,7 @@ import {
   MIN_CONTEXT,
   MIN_DEEPSEC_SCORE,
   OUTPUT_WEIGHT,
+  WORKHORSE_MIN_TOKEN_SHARE,
 } from "../scripts/gateway-value/rank"
 import { RANKING_RULES, STATIC_FAQS } from "./methodology"
 
@@ -20,6 +21,7 @@ describe("methodology", () => {
     expect(RANKING_RULES.midBlendUsd).toBe(MID_BLEND_USD)
     expect(RANKING_RULES.minContext).toBe(MIN_CONTEXT)
     expect(RANKING_RULES.minDeepsecScore).toBe(MIN_DEEPSEC_SCORE)
+    expect(RANKING_RULES.workhorseMinTokenShare).toBe(WORKHORSE_MIN_TOKEN_SHARE)
   })
 
   it("answers the core ranking questions in plain language", () => {
@@ -27,6 +29,7 @@ describe("methodology", () => {
       "What does ZDR + no training mean?",
       "How is bang-for-buck calculated?",
       "Which models count as capable?",
+      "What does the AA number mean?",
       "Is this an official Vercel product?",
     ])
   })

@@ -6,10 +6,13 @@ import { PageFrame, PageHeader } from "@/components/page-frame"
 import { SiteFooter } from "@/components/site-footer"
 import { TextLink } from "@/components/text-link"
 import {
+  AA_ATTRIBUTION,
+  AA_BENCHMARKS_URL,
   CATALOG_URL,
   DEEPSEC_RESULTS_URL,
   LABS_LEADERBOARD_URL,
   MODELS_LEADERBOARD_URL,
+  MODELS_PAGE_URL,
 } from "@/lib/gateway-snapshot"
 import { RANKING_RULES, STATIC_FAQS } from "@/lib/methodology"
 import { readSnapshot } from "@/lib/read-snapshot"
@@ -58,17 +61,21 @@ export default async function MethodologyPage() {
         </h2>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-[13.5px] leading-relaxed text-pretty text-ink-2">
           <li>
-            <strong className="font-medium text-ink">Privacy lane</strong> keeps
-            models where the catalog marks both ZDR and no-training as{" "}
+            <strong className="font-medium text-ink">Homepage picks</strong>{" "}
+            are the unrestricted winners. ZDR is a badge on the card when the
+            priced route qualifies, and a second price when a cheaper non-ZDR
+            route won. The privacy lane still ranks only models where the
+            catalog marks both ZDR and no-training as{" "}
             <code className="font-mono text-[12.5px]">all</code> or{" "}
-            <code className="font-mono text-[12.5px]">some</code>. That matches
+            <code className="font-mono text-[12.5px]">some</code>, matching
             Vercel&apos;s <code className="font-mono text-[12.5px]">?zdr=true</code>{" "}
             and <code className="font-mono text-[12.5px]">?npt=true</code>{" "}
-            filters.
+            filters, at the cheapest ZDR endpoint.
           </li>
           <li>
             <strong className="font-medium text-ink">Open lane</strong> ranks
-            the full catalog, including models that train or skip ZDR.
+            the full catalog, including models that train or skip ZDR, priced
+            at list or the cheapest endpoint of any kind, whichever is lower.
           </li>
           <li>
             <strong className="font-medium text-ink">Capable</strong> means
@@ -78,25 +85,33 @@ export default async function MethodologyPage() {
           <li>
             <strong className="font-medium text-ink">Blended price</strong> is{" "}
             {RANKING_RULES.inputWeight}× input + {RANKING_RULES.outputWeight}×
-            output, in $ / 1M tokens. Privacy ranks prefer a cheaper ZDR
-            endpoint when one exists.
+            output, in $ / 1M tokens, at the endpoint each lane would actually
+            route through.
           </li>
           <li>
             <strong className="font-medium text-ink">Value</strong> is{" "}
             {RANKING_RULES.lookbackDays}-day mean token share divided by blended
-            $ / 1M.
+            $ / 1M. Days a model is absent from the leaderboard count as zero.
           </li>
           <li>
-            <strong className="font-medium text-ink">Bang-for-buck</strong> is
-            DeepsecBench score divided by that run&apos;s cost. Frontier prefers
-            the highest Deepsec score among capable models; we ignore scores
-            below {RANKING_RULES.minDeepsecScore} when ranking bang.
+            <strong className="font-medium text-ink">Bang-for-buck</strong> is a
+            DeepsecBench run&apos;s score divided by that same run&apos;s cost —
+            runs are never mixed. Frontier is the highest single-run score among
+            capable models, falling back to Artificial Analysis intelligence
+            only when nobody in the pool has a Deepsec run. We ignore Deepsec
+            runs scoring below {RANKING_RULES.minDeepsecScore} when ranking
+            bang.
           </li>
           <li>
-            <strong className="font-medium text-ink">Cheap router</strong> blends
-            at or under ${RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M.{" "}
-            <strong className="font-medium text-ink">Workhorse</strong> blends at
-            or under ${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M.
+            <strong className="font-medium text-ink">Cheap router</strong> is
+            the cheapest adopted capable model blending at or under $
+            {RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M.{" "}
+            <strong className="font-medium text-ink">Workhorse</strong> is the
+            highest everyday-run Deepsec score among capable models holding at
+            least {RANKING_RULES.workhorseMinTokenShare}% token share at or
+            under ${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M.{" "}
+            <strong className="font-medium text-ink">Rising</strong> is the
+            most-adopted capable model DeepsecBench has not benchmarked yet.
           </li>
         </ul>
       </section>
@@ -108,6 +123,12 @@ export default async function MethodologyPage() {
             <TextLink external href={CATALOG_URL}>
               AI Gateway catalog
             </TextLink>
+          </li>
+          <li>
+            <TextLink external href={MODELS_PAGE_URL}>
+              AI Gateway models page
+            </TextLink>{" "}
+            — official list-vs-sale discounts
           </li>
           <li>
             <TextLink external href={MODELS_LEADERBOARD_URL}>
@@ -123,6 +144,12 @@ export default async function MethodologyPage() {
             <TextLink external href={DEEPSEC_RESULTS_URL}>
               DeepsecBench results
             </TextLink>
+          </li>
+          <li>
+            <TextLink external href={AA_BENCHMARKS_URL}>
+              Artificial Analysis indices via OpenRouter
+            </TextLink>{" "}
+            — {AA_ATTRIBUTION}
           </li>
         </ul>
       </section>

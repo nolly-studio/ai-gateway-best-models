@@ -30,10 +30,10 @@ function model(
     spendShare: 0,
     valueScore: null,
     overpay: null,
-    deepsecScore: null,
-    deepsecEffort: null,
-    deepsecCost: null,
-    deepsecBang: null,
+    deepsecBest: null,
+    deepsecValue: null,
+    deepsecEveryday: null,
+    aa: null,
     ...extras,
   }
 }
@@ -57,6 +57,7 @@ function snapshot(): GatewaySnapshot {
       models: "https://vercel.com/api/ai/leaderboard-export",
       labs: "https://vercel.com/api/ai/leaderboard-export",
       deepsec: "https://vercel.com/ai-gateway/leaderboards/deepsecbench",
+      aa: "https://openrouter.ai/api/v1/benchmarks",
     },
     attribution: {
       text: "© 2026 Vercel.",
@@ -68,6 +69,7 @@ function snapshot(): GatewaySnapshot {
       zdrModels: 176,
       privacyModels: 176,
       deepsecRuns: 35,
+      aaModels: 0,
     },
     picks: {
       privacy: {
@@ -75,12 +77,14 @@ function snapshot(): GatewaySnapshot {
         workhorse: flash,
         cheapRouter: flash,
         frontier: sol,
+        rising: null,
       },
       open: {
         bangForBuck: flash,
         workhorse: flash,
         cheapRouter: flash,
         frontier: sol,
+        rising: null,
       },
     },
     lists: {
@@ -102,7 +106,7 @@ function snapshot(): GatewaySnapshot {
       },
     },
     labs: [],
-    unmatched: { leaderboard: [], deepsec: [] },
+    unmatched: { leaderboard: [], deepsec: [], aa: [] },
     analysis: null,
   }
 }
@@ -110,7 +114,7 @@ function snapshot(): GatewaySnapshot {
 describe("seo copy", () => {
   it("names this week's value and frontier picks in the lead", () => {
     expect(homeLead(snapshot())).toContain(
-      "the best ZDR + no-training pick on AI Gateway is DeepSeek V4 Flash at $0.113 / 1M blended on deepinfra (31% off)"
+      "the best pick on AI Gateway is DeepSeek V4 Flash at $0.113 / 1M blended on deepinfra (31% off)"
     )
     expect(homeLead(snapshot())).toContain("The frontier pick is GPT 5.6 Sol")
   })
@@ -130,7 +134,6 @@ describe("seo copy", () => {
       "WebSite",
       "Organization",
       "Dataset",
-      "ItemList",
       "ItemList",
       "FAQPage",
     ])

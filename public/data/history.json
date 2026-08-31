@@ -1,82 +1,97 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "weeks": [
     {
       "week": "2026-08-31",
       "from": "2026-08-25",
-      "generatedAt": "2026-08-31T20:58:47.079Z",
+      "generatedAt": "2026-08-31T22:50:03.113Z",
       "href": "/data/weeks/2026-08-31.json",
       "stats": {
         "languageModels": 240,
         "zdrModels": 176,
         "privacyModels": 176,
-        "deepsecRuns": 35
+        "deepsecRuns": 35,
+        "aaModels": 85
       },
       "picks": {
         "privacy": {
           "bangForBuck": "deepseek/deepseek-v4-flash",
           "workhorse": "deepseek/deepseek-v4-flash",
           "cheapRouter": "deepseek/deepseek-v4-flash",
-          "frontier": "openai/gpt-5.6-sol"
+          "frontier": "openai/gpt-5.6-sol",
+          "rising": "deepseek/deepseek-v4-flash-0731"
         },
         "open": {
           "bangForBuck": "deepseek/deepseek-v4-flash",
           "workhorse": "deepseek/deepseek-v4-flash",
-          "cheapRouter": "deepseek/deepseek-v4-flash",
-          "frontier": "openai/gpt-5.6-sol"
+          "cheapRouter": "deepseek/deepseek-v4-flash-0731",
+          "frontier": "openai/gpt-5.6-sol",
+          "rising": "stepfun/step-3.7-flash"
         }
       },
       "pickMetrics": {
         "privacy": {
           "bangForBuck": {
-            "tokensShare": 22.140785714285716,
+            "tokensShare": 22.048642857142855,
             "zdrBlendedPerMillion": 0.1125,
             "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "valueScore": 195.9879365079365
           },
           "workhorse": {
-            "tokensShare": 22.140785714285716,
+            "tokensShare": 22.048642857142855,
             "zdrBlendedPerMillion": 0.1125,
             "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "valueScore": 195.9879365079365
           },
           "cheapRouter": {
-            "tokensShare": 22.140785714285716,
+            "tokensShare": 22.048642857142855,
             "zdrBlendedPerMillion": 0.1125,
             "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "valueScore": 195.9879365079365
           },
           "frontier": {
             "tokensShare": 0,
             "zdrBlendedPerMillion": 11.25,
             "deepsecBang": 1.398555750384399,
             "valueScore": null
+          },
+          "rising": {
+            "tokensShare": 6.327428571428571,
+            "zdrBlendedPerMillion": 0.1125,
+            "deepsecBang": null,
+            "valueScore": 56.243809523809524
           }
         },
         "open": {
           "bangForBuck": {
-            "tokensShare": 22.140785714285716,
+            "tokensShare": 22.048642857142855,
             "zdrBlendedPerMillion": 0.1125,
             "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "valueScore": 195.9879365079365
           },
           "workhorse": {
-            "tokensShare": 22.140785714285716,
+            "tokensShare": 22.048642857142855,
             "zdrBlendedPerMillion": 0.1125,
             "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "valueScore": 195.9879365079365
           },
           "cheapRouter": {
-            "tokensShare": 22.140785714285716,
-            "zdrBlendedPerMillion": 0.1125,
-            "deepsecBang": 3.0579406742209647,
-            "valueScore": 196.80698412698413
+            "tokensShare": 6.327428571428571,
+            "zdrBlendedPerMillion": 0.0625,
+            "deepsecBang": null,
+            "valueScore": 101.23885714285714
           },
           "frontier": {
             "tokensShare": 0,
-            "zdrBlendedPerMillion": 11.25,
+            "zdrBlendedPerMillion": null,
             "deepsecBang": 1.398555750384399,
             "valueScore": null
+          },
+          "rising": {
+            "tokensShare": 10.111285714285714,
+            "zdrBlendedPerMillion": null,
+            "deepsecBang": null,
+            "valueScore": 23.111510204081632
           }
         }
       }

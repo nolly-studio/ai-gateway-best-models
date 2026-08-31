@@ -2,7 +2,7 @@ import { blendOf, formatDay, formatWindow, money } from "@/lib/format"
 import type { GatewaySnapshot, SnapshotModel } from "@/lib/gateway-snapshot"
 import { weekPagePath } from "@/lib/gateway-snapshot"
 import { STATIC_FAQS, type SiteFaq } from "@/lib/methodology"
-import { groupPicks } from "@/lib/picks"
+import { weeklyFeaturedPicks } from "@/lib/picks"
 import {
   GITHUB_REPO_URL,
   PUBLISHER_NAME,
@@ -15,17 +15,17 @@ import {
 export function featuredValuePick(
   snapshot: GatewaySnapshot
 ): SnapshotModel | null {
-  return snapshot.picks.privacy.bangForBuck
+  return snapshot.picks.open.bangForBuck ?? snapshot.picks.privacy.bangForBuck
 }
 
 export function featuredFrontierPick(
   snapshot: GatewaySnapshot
 ): SnapshotModel | null {
-  return snapshot.picks.privacy.frontier ?? snapshot.picks.open.frontier
+  return snapshot.picks.open.frontier ?? snapshot.picks.privacy.frontier
 }
 
 export function homeTitle(): string {
-  return "Best AI Gateway models this week (ZDR + value)"
+  return "Best AI Gateway models this week"
 }
 
 export function homeDescription(snapshot: GatewaySnapshot): string {
@@ -33,10 +33,10 @@ export function homeDescription(snapshot: GatewaySnapshot): string {
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
   if (value && frontier && value.id !== frontier.id) {
-    return `This week’s best Vercel AI Gateway models (${window}): ${value.name} for ZDR value, ${frontier.name} for frontier. Ranked from catalog, adoption, and DeepsecBench.`
+    return `This week’s best Vercel AI Gateway models (${window}): ${value.name} for value, ${frontier.name} for frontier. Ranked from catalog, adoption, and DeepsecBench.`
   }
   if (value) {
-    return `This week’s best Vercel AI Gateway model (${window}): ${value.name}. Weekly ZDR + no-training and bang-for-buck picks from catalog, adoption, and DeepsecBench.`
+    return `This week’s best Vercel AI Gateway model (${window}): ${value.name}. Weekly picks from catalog, adoption, and DeepsecBench.`
   }
   return `${SITE_DESCRIPTION} Week of ${window}.`
 }
@@ -46,7 +46,7 @@ export function homeLead(snapshot: GatewaySnapshot): string {
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
   if (value == null) {
-    return `This week (${window}), bestmodels.dev ranks Vercel AI Gateway models for ZDR + no-training defaults and unrestricted bang-for-buck.`
+    return `This week (${window}), bestmodels.dev ranks Vercel AI Gateway models from the live catalog, adoption, and DeepsecBench.`
   }
 
   const blend = money(blendOf(value))
@@ -55,7 +55,7 @@ export function homeLead(snapshot: GatewaySnapshot): string {
     value.discountPercent != null
       ? ` (${Math.round(value.discountPercent)}% off)`
       : ""
-  const valueClause = `the best ZDR + no-training pick on AI Gateway is ${value.name} at ${blend} / 1M blended${provider}${discount}`
+  const valueClause = `the best pick on AI Gateway is ${value.name} at ${blend} / 1M blended${provider}${discount}`
 
   if (frontier && frontier.id !== value.id) {
     return `This week (${window}), ${valueClause}. The frontier pick is ${frontier.name}.`
@@ -83,8 +83,7 @@ function listItems(models: SnapshotModel[]) {
 }
 
 export function homeJsonLd(snapshot: GatewaySnapshot) {
-  const privacy = groupPicks(snapshot.picks.privacy).map((pick) => pick.model)
-  const open = groupPicks(snapshot.picks.open).map((pick) => pick.model)
+  const weekly = weeklyFeaturedPicks(snapshot.picks).map((pick) => pick.model)
   const faqs = siteFaqs(snapshot)
 
   return {
@@ -130,15 +129,9 @@ export function homeJsonLd(snapshot: GatewaySnapshot) {
       },
       {
         "@type": "ItemList",
-        "@id": `${SITE_ORIGIN}/#privacy-picks`,
-        name: "Best ZDR + no-training AI Gateway models this week",
-        itemListElement: listItems(privacy),
-      },
-      {
-        "@type": "ItemList",
-        "@id": `${SITE_ORIGIN}/#open-picks`,
-        name: "Best bang-for-buck AI Gateway models this week",
-        itemListElement: listItems(open),
+        "@id": `${SITE_ORIGIN}/#weekly-picks`,
+        name: "This week's AI Gateway picks",
+        itemListElement: listItems(weekly),
       },
       {
         "@type": "FAQPage",

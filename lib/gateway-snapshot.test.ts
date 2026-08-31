@@ -13,12 +13,12 @@ import {
 
 function model(
   id: string,
-  metrics: Partial<
-    Pick<
-      SnapshotModel,
-      "tokensShare" | "zdrBlendedPerMillion" | "deepsecBang" | "valueScore"
-    >
-  > = {}
+  metrics: {
+    tokensShare?: number
+    zdrBlendedPerMillion?: number | null
+    deepsecBang?: number | null
+    valueScore?: number | null
+  } = {}
 ): SnapshotModel {
   return {
     id,
@@ -41,10 +41,18 @@ function model(
     spendShare: 0,
     valueScore: metrics.valueScore ?? null,
     overpay: null,
-    deepsecScore: null,
-    deepsecEffort: null,
-    deepsecCost: null,
-    deepsecBang: metrics.deepsecBang ?? null,
+    deepsecBest: null,
+    deepsecValue:
+      metrics.deepsecBang != null
+        ? {
+            score: 15.48,
+            effort: "medium",
+            costUsd: 5.06,
+            bang: metrics.deepsecBang,
+          }
+        : null,
+    deepsecEveryday: null,
+    aa: null,
   }
 }
 
@@ -65,6 +73,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
       models: "https://vercel.com/api/ai/leaderboard-export",
       labs: "https://vercel.com/api/ai/leaderboard-export",
       deepsec: "https://vercel.com/ai-gateway/leaderboards/deepsecbench",
+      aa: "https://openrouter.ai/api/v1/benchmarks",
     },
     attribution: {
       text: "© 2026 Vercel.",
@@ -76,6 +85,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
       zdrModels: 176,
       privacyModels: 176,
       deepsecRuns: 35,
+      aaModels: 0,
     },
     picks: {
       privacy: {
@@ -88,6 +98,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
           deepsecBang: 1.4,
           valueScore: null,
         }),
+        rising: null,
       },
       open: {
         bangForBuck: flash,
@@ -99,6 +110,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
           deepsecBang: 1.4,
           valueScore: null,
         }),
+        rising: null,
       },
     },
     lists: {
@@ -120,7 +132,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
       },
     },
     labs: [],
-    unmatched: { leaderboard: [], deepsec: [] },
+    unmatched: { leaderboard: [], deepsec: [], aa: [] },
     analysis: null,
     ...overrides,
   }
@@ -140,6 +152,7 @@ describe("toHistoryWeek", () => {
       workhorse: "deepseek/deepseek-v4-flash",
       cheapRouter: "deepseek/deepseek-v4-flash",
       frontier: "openai/gpt-5.6-sol",
+      rising: null,
     })
     expect(week.picks.open.bangForBuck).toBe("deepseek/deepseek-v4-flash")
     expect(week.pickMetrics.privacy.bangForBuck).toEqual({
@@ -160,12 +173,14 @@ describe("toHistoryWeek", () => {
             workhorse: null,
             cheapRouter: null,
             frontier: null,
+            rising: null,
           },
           open: {
             bangForBuck: model("deepseek/deepseek-v4-flash"),
             workhorse: null,
             cheapRouter: null,
             frontier: null,
+            rising: null,
           },
         },
       })
@@ -207,12 +222,14 @@ describe("upsertHistory", () => {
             workhorse: model("deepseek/deepseek-v4-flash"),
             cheapRouter: model("deepseek/deepseek-v4-flash"),
             frontier: model("openai/gpt-5.6-sol"),
+            rising: null,
           },
           open: {
             bangForBuck: model("alibaba/qwen3.8-max"),
             workhorse: model("deepseek/deepseek-v4-flash"),
             cheapRouter: model("deepseek/deepseek-v4-flash"),
             frontier: model("openai/gpt-5.6-sol"),
+            rising: null,
           },
         },
       })

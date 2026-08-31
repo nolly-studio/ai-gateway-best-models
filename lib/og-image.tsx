@@ -15,12 +15,12 @@ export const ogSize = {
 
 export const ogContentType = "image/png"
 
-const canvas = "#0a0a0a"
-const surface = "#171717"
-const ink = "#fafafa"
-const ink2 = "#c7c7c7"
-const ink3 = "#a3a3a3"
-const line = "rgba(255,255,255,0.1)"
+const canvas = "#000000"
+const surface = "#111111"
+const ink = "#ffffff"
+const ink2 = "#a3a3a3"
+const ink3 = "#737373"
+const line = "rgba(255,255,255,0.12)"
 
 export function snapshotOgAlt(snapshot: GatewaySnapshot): string {
   const value = featuredValuePick(snapshot)
@@ -37,9 +37,9 @@ export function snapshotOgAlt(snapshot: GatewaySnapshot): string {
 
 async function loadGeistFonts() {
   const dir = join(process.cwd(), "node_modules/geist/dist/fonts/geist-sans")
-  const [regular, semiBold] = await Promise.all([
+  const [regular, medium] = await Promise.all([
     readFile(join(dir, "Geist-Regular.ttf")),
-    readFile(join(dir, "Geist-SemiBold.ttf")),
+    readFile(join(dir, "Geist-Medium.ttf")),
   ])
 
   return [
@@ -51,9 +51,9 @@ async function loadGeistFonts() {
     },
     {
       name: "Geist",
-      data: semiBold,
+      data: medium,
       style: "normal" as const,
-      weight: 600 as const,
+      weight: 500 as const,
     },
   ]
 }
@@ -72,7 +72,7 @@ function PickRow({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 8,
+        gap: 6,
         padding: "28px 32px 52px",
         background: surface,
         borderRadius: 16,
@@ -83,9 +83,10 @@ function PickRow({
       <div
         style={{
           display: "flex",
-          fontSize: 22,
+          fontSize: 18,
+          fontWeight: 400,
           color: ink3,
-          letterSpacing: 0.2,
+          lineHeight: 1.2,
         }}
       >
         {label}
@@ -93,15 +94,25 @@ function PickRow({
       <div
         style={{
           display: "flex",
-          fontSize: 40,
-          fontWeight: 600,
+          fontSize: 36,
+          fontWeight: 500,
           color: ink,
-          lineHeight: 1.15,
+          lineHeight: 1.05,
+          letterSpacing: -1.1,
         }}
       >
         {name}
       </div>
-      <div style={{ display: "flex", fontSize: 24, color: ink2 }}>
+      <div
+        style={{
+          display: "flex",
+          fontSize: 20,
+          fontWeight: 400,
+          color: ink2,
+          lineHeight: 1.2,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {blend}
       </div>
     </div>
@@ -110,7 +121,7 @@ function PickRow({
 
 export async function snapshotOgImage(
   snapshot: GatewaySnapshot,
-  title = "Best AI Gateway models"
+  title = "Best AI Gateway models."
 ) {
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
   const value = featuredValuePick(snapshot)
@@ -139,13 +150,14 @@ export async function snapshotOgImage(
             alignItems: "flex-start",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div
               style={{
                 display: "flex",
-                fontSize: 24,
+                fontSize: 20,
+                fontWeight: 400,
                 color: ink3,
-                letterSpacing: 0.4,
+                lineHeight: 1.2,
               }}
             >
               {SITE_NAME}
@@ -153,10 +165,13 @@ export async function snapshotOgImage(
             <div
               style={{
                 display: "flex",
-                fontSize: 56,
-                fontWeight: 600,
-                lineHeight: 1.1,
-                maxWidth: 820,
+                flexWrap: "wrap",
+                width: 560,
+                fontSize: 64,
+                fontWeight: 500,
+                lineHeight: 1.02,
+                letterSpacing: -2.4,
+                color: ink,
               }}
             >
               {title}
@@ -165,8 +180,11 @@ export async function snapshotOgImage(
           <div
             style={{
               display: "flex",
-              fontSize: 24,
-              color: ink2,
+              fontSize: 20,
+              fontWeight: 400,
+              color: ink3,
+              lineHeight: 1.2,
+              fontVariantNumeric: "tabular-nums",
             }}
           >
             {window}
@@ -179,7 +197,7 @@ export async function snapshotOgImage(
                 ? `${money(blendOf(value))} / 1M${value.zdrProvider ? ` · ${value.zdrProvider}` : ""}`
                 : "No pick"
             }
-            label="ZDR + no training"
+            label="Bang"
             name={value?.name ?? "—"}
           />
           <PickRow

@@ -1,5 +1,5 @@
-export const SNAPSHOT_SCHEMA_VERSION = 2
-export const HISTORY_SCHEMA_VERSION = 2
+export const SNAPSHOT_SCHEMA_VERSION = 4
+export const HISTORY_SCHEMA_VERSION = 3
 export const SNAPSHOT_RELATIVE_PATH = "public/data/gateway.json"
 export const HISTORY_RELATIVE_PATH = "public/data/history.json"
 export const WEEKS_RELATIVE_DIR = "public/data/weeks"
@@ -11,6 +11,7 @@ export const SNAPSHOT_PICK_KEYS = [
   "workhorse",
   "cheapRouter",
   "frontier",
+  "rising",
 ] as const satisfies readonly SnapshotPickKey[]
 
 export function weekSnapshotRelativePath(week: string): string {
@@ -26,12 +27,18 @@ export function weekPagePath(week: string): string {
 }
 
 export const CATALOG_URL = "https://ai-gateway.vercel.sh/v1/models"
+export const MODELS_PAGE_URL = "https://vercel.com/ai-gateway/models"
 export const MODELS_LEADERBOARD_URL =
   "https://vercel.com/api/ai/leaderboard-export?dataset=models&modality=text"
 export const LABS_LEADERBOARD_URL =
   "https://vercel.com/api/ai/leaderboard-export?dataset=labs&modality=text"
 export const DEEPSEC_RESULTS_URL =
   "https://vercel.com/ai-gateway/leaderboards/deepsecbench/results.json"
+export const AA_BENCHMARKS_URL =
+  "https://openrouter.ai/api/v1/benchmarks?source=artificial-analysis&max_results=100"
+export const AA_MODELS_URL = "https://openrouter.ai/api/v1/models"
+export const AA_ATTRIBUTION =
+  "Intelligence, coding, and agentic indices: Artificial Analysis via OpenRouter, CC BY 4.0."
 
 export const ATTRIBUTION_TEXT =
   "© 2026 Vercel. AI Gateway Leaderboard Data is licensed under CC BY 4.0."
@@ -40,6 +47,18 @@ export const ATTRIBUTION_LICENSE_URL =
   "https://creativecommons.org/licenses/by/4.0/"
 
 export type SnapshotZdr = "all" | "some" | "none"
+
+/**
+ * One complete DeepsecBench run: the score, the reasoning effort, and the
+ * cost all belong to the same execution. Never mix fields across runs.
+ */
+export type SnapshotDeepsecRun = {
+  score: number
+  effort: string
+  costUsd: number
+  /** score / costUsd for this run */
+  bang: number | null
+}
 
 export type SnapshotModel = {
   id: string
@@ -53,6 +72,12 @@ export type SnapshotModel = {
   inputPerMillion: number | null
   outputPerMillion: number | null
   blendedPerMillion: number | null
+  /**
+   * Blend at the endpoint the lane would actually route through, when it
+   * differs from list. Privacy lane: cheapest ZDR endpoint (may exceed list).
+   * Open lane: cheapest endpoint, set only when it beats list. Field names
+   * predate the open lane and are kept for snapshot compatibility.
+   */
   zdrBlendedPerMillion: number | null
   zdrProvider: string | null
   discounted: boolean
@@ -62,10 +87,20 @@ export type SnapshotModel = {
   spendShare: number
   valueScore: number | null
   overpay: number | null
-  deepsecScore: number | null
-  deepsecEffort: string | null
-  deepsecCost: number | null
-  deepsecBang: number | null
+  /** Run with the highest score (frontier's number). */
+  deepsecBest: SnapshotDeepsecRun | null
+  /** Run with the best score per dollar (bang's number). */
+  deepsecValue: SnapshotDeepsecRun | null
+  /** Lowest published effort run (workhorse's everyday quality number). */
+  deepsecEveryday: SnapshotDeepsecRun | null
+  /** Artificial Analysis indices. Shown as a footnote; never mixed with Deepsec. */
+  aa: SnapshotAaIndices | null
+}
+
+export type SnapshotAaIndices = {
+  intelligence: number | null
+  coding: number | null
+  agentic: number | null
 }
 
 export type SnapshotLab = {
@@ -76,7 +111,11 @@ export type SnapshotLab = {
 }
 
 export type SnapshotPickKey =
-  "bangForBuck" | "workhorse" | "cheapRouter" | "frontier"
+  | "bangForBuck"
+  | "workhorse"
+  | "cheapRouter"
+  | "frontier"
+  | "rising"
 
 export type SnapshotLaneKey = (typeof SNAPSHOT_LANE_KEYS)[number]
 
@@ -107,6 +146,7 @@ export type GatewaySnapshot = {
     models: string
     labs: string
     deepsec: string
+    aa: string
   }
   attribution: {
     text: string
@@ -118,6 +158,7 @@ export type GatewaySnapshot = {
     zdrModels: number
     privacyModels: number
     deepsecRuns: number
+    aaModels: number
   }
   picks: Record<SnapshotLaneKey, SnapshotPicks>
   lists: Record<SnapshotLaneKey, SnapshotLists>
@@ -125,6 +166,7 @@ export type GatewaySnapshot = {
   unmatched: {
     leaderboard: string[]
     deepsec: string[]
+    aa: string[]
   }
   analysis: SnapshotAnalysis | null
 }
@@ -167,7 +209,7 @@ function toPickMetrics(model: SnapshotModel): HistoryPickMetrics {
   return {
     tokensShare: model.tokensShare,
     zdrBlendedPerMillion: model.zdrBlendedPerMillion,
-    deepsecBang: model.deepsecBang,
+    deepsecBang: model.deepsecValue?.bang ?? null,
     valueScore: model.valueScore,
   }
 }
@@ -178,6 +220,7 @@ export function emptyHistoryLanePicks(): HistoryLanePicks {
     workhorse: null,
     cheapRouter: null,
     frontier: null,
+    rising: null,
   }
 }
 

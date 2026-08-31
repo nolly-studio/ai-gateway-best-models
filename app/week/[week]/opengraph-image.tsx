@@ -19,5 +19,5 @@ export default async function Image({
   if (snapshot == null) {
     return snapshotOgImage(await readSnapshot())
   }
-  return snapshotOgImage(snapshot, `Best models for ${snapshot.window.to}`)
+  return snapshotOgImage(snapshot, "Best models this week.")
 }

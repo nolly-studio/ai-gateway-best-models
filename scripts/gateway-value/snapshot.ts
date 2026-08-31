@@ -1,4 +1,5 @@
 import {
+  AA_BENCHMARKS_URL,
   ATTRIBUTION_LICENSE,
   ATTRIBUTION_LICENSE_URL,
   ATTRIBUTION_TEXT,
@@ -21,6 +22,7 @@ import {
   bySpendShare,
   byTokenShare,
   CHEAP_BLEND_USD,
+  effectiveBlend,
   hasAdoption,
   isCapable,
   LOOKBACK_DAYS,
@@ -35,6 +37,7 @@ export type RankedPicks = {
   workhorse: RankedModel | null
   cheapRouter: RankedModel | null
   frontier: RankedModel | null
+  rising: RankedModel | null
 }
 
 export type RankedLists = {
@@ -53,6 +56,7 @@ export type SnapshotInput = {
   zdrModels: number
   privacyModels: number
   deepsecRuns: number
+  aaModels: number
   picks: {
     privacy: RankedPicks
     open: RankedPicks
@@ -65,6 +69,7 @@ export type SnapshotInput = {
   unmatched: {
     leaderboard: string[]
     deepsec: string[]
+    aa: string[]
   }
 }
 
@@ -102,8 +107,11 @@ export function toSnapshotModel(model: RankedModel): SnapshotModel {
     inputPerMillion: model.inputPerMillion,
     outputPerMillion: model.outputPerMillion,
     blendedPerMillion: model.blendedPerMillion,
-    zdrBlendedPerMillion: model.zdrBlendedPerMillion,
-    zdrProvider: model.zdrProvider,
+    // Schema keeps the historical zdr* field names; since schema v2 they hold
+    // the lane's governing endpoint (ZDR-only in the privacy lane, cheapest
+    // list-beating endpoint in the open lane).
+    zdrBlendedPerMillion: model.endpointBlendedPerMillion,
+    zdrProvider: model.endpointProvider,
     discounted: model.discounted,
     discountPercent: model.discountPercent,
     requestsShare: model.requestsShare,
@@ -111,10 +119,10 @@ export function toSnapshotModel(model: RankedModel): SnapshotModel {
     spendShare: model.spendShare,
     valueScore: model.valueScore,
     overpay: model.overpay,
-    deepsecScore: model.deepsecScore,
-    deepsecEffort: model.deepsecEffort,
-    deepsecCost: model.deepsecCost,
-    deepsecBang: model.deepsecBang,
+    deepsecBest: model.deepsecBest,
+    deepsecValue: model.deepsecValue,
+    deepsecEveryday: model.deepsecEveryday,
+    aa: model.aa,
   }
 }
 
@@ -134,42 +142,35 @@ export function toSnapshotLabs(
 }
 
 export function buildLists(
-  zdrRanked: RankedModel[],
+  ranked: RankedModel[],
   leaderboard: RankedModel[]
 ): RankedLists {
   return {
-    deepsecBang: zdrRanked
+    deepsecBang: ranked
       .filter(
         (model) =>
-          model.deepsecBang != null &&
-          (model.deepsecScore ?? 0) >= MIN_DEEPSEC_SCORE
+          model.deepsecValue?.bang != null &&
+          model.deepsecValue.score >= MIN_DEEPSEC_SCORE
       )
       .toSorted(byDeepsecBang)
       .slice(0, 12),
-    deepsecScore: zdrRanked
-      .filter((model) => model.deepsecScore != null)
+    deepsecScore: ranked
+      .filter((model) => model.deepsecBest != null)
       .toSorted(byDeepsecScore)
       .slice(0, 8),
-    discounted: zdrRanked
-      .filter((model) => model.discounted)
-      .toSorted(byDiscount),
-    cheapCapable: zdrRanked
+    discounted: ranked.filter((model) => model.discounted).toSorted(byDiscount),
+    cheapCapable: ranked
       .filter(
         (model) =>
           isCapable(model) &&
           hasAdoption(model) &&
-          (model.zdrBlendedPerMillion ??
-            model.blendedPerMillion ??
-            Number.POSITIVE_INFINITY) <= CHEAP_BLEND_USD
+          (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <=
+            CHEAP_BLEND_USD
       )
       .toSorted(
         (left, right) =>
-          (left.zdrBlendedPerMillion ??
-            left.blendedPerMillion ??
-            Number.POSITIVE_INFINITY) -
-          (right.zdrBlendedPerMillion ??
-            right.blendedPerMillion ??
-            Number.POSITIVE_INFINITY)
+          (effectiveBlend(left) ?? Number.POSITIVE_INFINITY) -
+          (effectiveBlend(right) ?? Number.POSITIVE_INFINITY)
       ),
     tokenShare: leaderboard.toSorted(byTokenShare).slice(0, 8),
     spendShare: leaderboard.toSorted(bySpendShare).slice(0, 8),
@@ -182,6 +183,7 @@ export function toSnapshotPicks(picks: RankedPicks): SnapshotPicks {
     workhorse: picks.workhorse ? toSnapshotModel(picks.workhorse) : null,
     cheapRouter: picks.cheapRouter ? toSnapshotModel(picks.cheapRouter) : null,
     frontier: picks.frontier ? toSnapshotModel(picks.frontier) : null,
+    rising: picks.rising ? toSnapshotModel(picks.rising) : null,
   }
 }
 
@@ -210,6 +212,7 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
       models: MODELS_LEADERBOARD_URL,
       labs: LABS_LEADERBOARD_URL,
       deepsec: DEEPSEC_RESULTS_URL,
+      aa: AA_BENCHMARKS_URL,
     },
     attribution: {
       text: ATTRIBUTION_TEXT,
@@ -221,6 +224,7 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
       zdrModels: input.zdrModels,
       privacyModels: input.privacyModels,
       deepsecRuns: input.deepsecRuns,
+      aaModels: input.aaModels,
     },
     picks: {
       privacy: toSnapshotPicks(input.picks.privacy),

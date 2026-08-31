@@ -50,7 +50,7 @@ export function PageHeader({
       <p className="mt-8 font-mono text-xs leading-relaxed text-pretty text-ink-2 tabular-nums">
         {meta}
       </p>
-      <h1 className="mt-3 font-pixel-square text-2xl leading-[1.1] font-semibold tracking-tight text-balance text-ink">
+      <h1 className="mt-3 text-2xl leading-[1.1] font-semibold tracking-tight text-balance text-ink">
         {title}
       </h1>
       <div className="mt-4 flex max-w-[65ch] flex-col gap-2 text-base leading-[1.6] text-pretty text-ink-2">

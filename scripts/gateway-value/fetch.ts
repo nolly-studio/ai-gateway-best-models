@@ -1,18 +1,25 @@
 import {
+  AA_BENCHMARKS_URL,
+  AA_MODELS_URL,
   CATALOG_URL,
   DEEPSEC_RESULTS_URL,
   LABS_LEADERBOARD_URL,
   MODELS_LEADERBOARD_URL,
+  MODELS_PAGE_URL,
 } from "../../lib/gateway-snapshot"
 import {
   blendedCost,
+  hasAaIndex,
+  MIN_DISCOUNT_PERCENT,
   perMillion,
   toNumber,
+  type AaIndices,
   type DeepsecRow,
   type EndpointQuote,
   type GatewayModel,
   type LeaderboardMetric,
   type LeaderboardRow,
+  type OfficialPromo,
 } from "./rank"
 
 const DEEPSEC_PAGE_URL =
@@ -92,6 +99,174 @@ async function getText(url: string, label: string): Promise<string> {
     throw new Error(`${label} ${response.status}: ${await response.text()}`)
   }
   return response.text()
+}
+
+const FLIGHT_UNDEFINED = "$undefined"
+const FLIGHT_OBJECT_PREFIX = '{"providerScope":'
+
+function flightNumber(value: unknown): number | null {
+  if (value == null || value === FLIGHT_UNDEFINED) {
+    return null
+  }
+  const parsed = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function firstListAmount(tiers: unknown): number | null {
+  if (!Array.isArray(tiers)) {
+    return null
+  }
+  const objects = tiers.filter(
+    (tier): tier is Record<string, unknown> =>
+      tier != null && typeof tier === "object" && !Array.isArray(tier)
+  )
+  if (objects.length === 0) {
+    return null
+  }
+  const zero = objects.filter((tier) => (tier.minInclusive ?? 0) === 0)
+  const pool = zero.length > 0 ? zero : objects
+  const listed = pool.filter((tier) => tier.priceType === "list")
+  const picked = listed[0] ?? pool[0]
+  return flightNumber(picked?.amount)
+}
+
+function readJsonObject(
+  text: string,
+  start: number
+): { value: unknown; end: number } | null {
+  if (text[start] !== "{") {
+    return null
+  }
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === "\\") {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+    if (char === '"') {
+      inString = true
+    } else if (char === "{") {
+      depth += 1
+    } else if (char === "}") {
+      depth -= 1
+      if (depth === 0) {
+        try {
+          return {
+            value: JSON.parse(text.slice(start, index + 1)),
+            end: index + 1,
+          }
+        } catch {
+          return null
+        }
+      }
+    }
+  }
+  return null
+}
+
+function promoFromFlight(raw: unknown): OfficialPromo | null {
+  if (raw == null || typeof raw !== "object") {
+    return null
+  }
+  const model = raw as {
+    copyString?: unknown
+    inputCost?: unknown
+    outputCost?: unknown
+    inputListCostTiers?: unknown
+    outputListCostTiers?: unknown
+  }
+  const id = typeof model.copyString === "string" ? model.copyString : null
+  if (id == null || !id.includes("/")) {
+    return null
+  }
+
+  const currentIn = flightNumber(model.inputCost)
+  const currentOut = flightNumber(model.outputCost)
+  const listIn = firstListAmount(model.inputListCostTiers)
+  const listOut = firstListAmount(model.outputListCostTiers)
+  if (
+    currentIn == null ||
+    currentOut == null ||
+    currentIn <= 0 ||
+    currentOut <= 0 ||
+    listIn == null ||
+    listOut == null ||
+    listIn <= 0 ||
+    listOut <= 0 ||
+    currentIn >= listIn
+  ) {
+    return null
+  }
+
+  const discountPercent = Math.round((1 - currentIn / listIn) * 100)
+  if (discountPercent < MIN_DISCOUNT_PERCENT) {
+    return null
+  }
+  return {
+    id,
+    inputPerMillion: currentIn,
+    outputPerMillion: currentOut,
+    listInputPerMillion: listIn,
+    listOutputPerMillion: listOut,
+    discountPercent,
+  }
+}
+
+/**
+ * Official list-vs-sale promos from the AI Gateway models page RSC flight.
+ * Skips flight-ref tiers, zero current prices, and models with no list tiers.
+ */
+export function parseModelsPageFlight(rsc: string): OfficialPromo[] {
+  const promos: OfficialPromo[] = []
+  const seen = new Set<string>()
+  let from = 0
+  while (from < rsc.length) {
+    const start = rsc.indexOf(FLIGHT_OBJECT_PREFIX, from)
+    if (start < 0) {
+      break
+    }
+    const parsed = readJsonObject(rsc, start)
+    if (parsed == null) {
+      from = start + 1
+      continue
+    }
+    const promo = promoFromFlight(parsed.value)
+    if (promo != null && !seen.has(promo.id)) {
+      seen.add(promo.id)
+      promos.push(promo)
+    }
+    from = parsed.end
+  }
+  return promos
+}
+
+export async function fetchOfficialPromos(): Promise<Map<string, OfficialPromo>> {
+  const response = await fetch(MODELS_PAGE_URL, {
+    headers: {
+      RSC: "1",
+      Accept: "text/x-component",
+      "User-Agent": "bestmodels.dev/1.0",
+    },
+  })
+  if (!response.ok) {
+    throw new Error(
+      `Models page ${response.status}: ${await response.text()}`
+    )
+  }
+  const promos = parseModelsPageFlight(await response.text())
+  if (promos.length === 0) {
+    console.warn("Models page parsed 0 official promos; On sale will be empty")
+  }
+  return new Map(promos.map((promo) => [promo.id, promo]))
 }
 
 function mapLeaderboardRows(rows: LeaderboardExportRow[]): LeaderboardRow[] {
@@ -319,6 +494,131 @@ async function mapPool<T, R>(
     Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
   )
   return results
+}
+
+type OpenRouterAaBlock = {
+  intelligence_index?: number | null
+  coding_index?: number | null
+  agentic_index?: number | null
+}
+
+type OpenRouterModelItem = {
+  id?: string
+  canonical_slug?: string
+  benchmarks?: {
+    artificial_analysis?: OpenRouterAaBlock | null
+  }
+}
+
+type OpenRouterModelsResponse = {
+  data?: OpenRouterModelItem[]
+}
+
+type OpenRouterBenchmarkItem = {
+  source?: string
+  model_permaslug?: string
+  intelligence_index?: number | null
+  coding_index?: number | null
+  agentic_index?: number | null
+}
+
+type OpenRouterBenchmarksResponse = {
+  data?: OpenRouterBenchmarkItem[]
+}
+
+function finiteOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function indicesFromAaBlock(block: OpenRouterAaBlock | null | undefined): AaIndices {
+  return {
+    intelligence: finiteOrNull(block?.intelligence_index),
+    coding: finiteOrNull(block?.coding_index),
+    agentic: finiteOrNull(block?.agentic_index),
+  }
+}
+
+function setAa(
+  byId: Map<string, AaIndices>,
+  id: string | undefined,
+  indices: AaIndices
+) {
+  if (id == null || id === "" || !hasAaIndex(indices)) {
+    return
+  }
+  byId.set(id, indices)
+}
+
+export function parseOpenRouterModels(
+  body: OpenRouterModelsResponse
+): Map<string, AaIndices> {
+  const byId = new Map<string, AaIndices>()
+  for (const item of body.data ?? []) {
+    setAa(
+      byId,
+      item.id ?? item.canonical_slug,
+      indicesFromAaBlock(item.benchmarks?.artificial_analysis)
+    )
+  }
+  return byId
+}
+
+export function parseOpenRouterBenchmarks(
+  body: OpenRouterBenchmarksResponse
+): Map<string, AaIndices> {
+  const byId = new Map<string, AaIndices>()
+  for (const item of body.data ?? []) {
+    if (item.source != null && item.source !== "artificial-analysis") {
+      continue
+    }
+    setAa(byId, item.model_permaslug, indicesFromAaBlock(item))
+  }
+  return byId
+}
+
+async function fetchAaFromModels(): Promise<Map<string, AaIndices>> {
+  try {
+    const body = await getJson<OpenRouterModelsResponse>(
+      AA_MODELS_URL,
+      "OpenRouter models"
+    )
+    return parseOpenRouterModels(body)
+  } catch {
+    return new Map()
+  }
+}
+
+async function fetchAaFromBenchmarks(): Promise<Map<string, AaIndices>> {
+  const key = process.env.OPENROUTER_API_KEY
+  if (key == null || key === "") {
+    return new Map()
+  }
+  try {
+    const response = await fetch(AA_BENCHMARKS_URL, {
+      headers: { Authorization: `Bearer ${key}` },
+    })
+    if (!response.ok) {
+      return new Map()
+    }
+    return parseOpenRouterBenchmarks(
+      (await response.json()) as OpenRouterBenchmarksResponse
+    )
+  } catch {
+    return new Map()
+  }
+}
+
+/**
+ * Artificial Analysis headline indices via OpenRouter.
+ * The public models list is tried first (no key). The benches endpoint
+ * needs OPENROUTER_API_KEY and fills gaps. Failures are empty, not fatal.
+ */
+export async function fetchAaIndices(): Promise<Map<string, AaIndices>> {
+  const fromModels = await fetchAaFromModels()
+  if (fromModels.size > 0) {
+    return fromModels
+  }
+  return fetchAaFromBenchmarks()
 }
 
 export async function fetchEndpointQuotes(

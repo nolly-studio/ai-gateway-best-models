@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest"
 
 import { SNAPSHOT_SCHEMA_VERSION } from "../../lib/gateway-snapshot"
-import { formatDuration, parseDeepsecHtml, parseDeepsecResults } from "./fetch"
 import {
+  formatDuration,
+  parseDeepsecHtml,
+  parseDeepsecResults,
+  parseModelsPageFlight,
+  parseOpenRouterBenchmarks,
+  parseOpenRouterModels,
+} from "./fetch"
+import {
+  attachAa,
   attachDeepsec,
   attachEndpoints,
+  attachPromo,
   averageAdoption,
   blendedCost,
+  everydayDeepsecRun,
   hasNoTraining,
   hasPrivacy,
   hasZdr,
@@ -19,6 +29,7 @@ import {
   pickCheapRouter,
   pickDefaultWorkhorse,
   pickFrontier,
+  pickRising,
   rankFromBoard,
   rankFromCatalog,
   spendOverpay,
@@ -93,6 +104,30 @@ function ranked(
   return result
 }
 
+function run(
+  id: string,
+  effort: string,
+  scoreValue: number,
+  costUsd: number
+): DeepsecRow {
+  return {
+    rank: 1,
+    name: id,
+    effort,
+    id,
+    score: scoreValue,
+    recall: 0,
+    precision: 0,
+    issues: 0,
+    total: 0,
+    falsePositives: 0,
+    costUsd,
+    time: "",
+    tokens: "",
+    harness: "",
+  }
+}
+
 describe("gateway-value rank", () => {
   it("blends input heavier than output", () => {
     expect(blendedCost(0.13, 0.26)).toBeCloseTo(0.1625)
@@ -153,6 +188,44 @@ describe("gateway-value rank", () => {
     expect(adoption.get("DeepSeek V4 Flash")?.tokens).toBe(22)
   })
 
+  it("counts missing days as zero share", () => {
+    const rows: LeaderboardRow[] = [
+      {
+        date: "2026-08-31",
+        name: "Spiky Model",
+        metric: "tokens",
+        share_percent: 20,
+      },
+      {
+        date: "2026-08-30",
+        name: "Steady Model",
+        metric: "tokens",
+        share_percent: 10,
+      },
+      {
+        date: "2026-08-31",
+        name: "Steady Model",
+        metric: "tokens",
+        share_percent: 10,
+      },
+    ]
+    const window = new Set(["2026-08-30", "2026-08-31"])
+    const adoption = averageAdoption(rows, window)
+    expect(adoption.get("Spiky Model")?.tokens).toBe(10)
+    expect(adoption.get("Steady Model")?.tokens).toBe(10)
+  })
+
+  it("limits the window to calendar days, not exported rows", () => {
+    const { from, to, window } = lookbackWindow(
+      ["2026-08-01", "2026-08-29", "2026-08-31"],
+      7
+    )
+    expect(to).toBe("2026-08-31")
+    expect(from).toBe("2026-08-29")
+    expect(window.has("2026-08-01")).toBe(false)
+    expect(window.size).toBe(2)
+  })
+
   it("picks workhorse, cheap router, and frontier", () => {
     const cheap = ranked(capableModel, { tokens: 22.5, requests: 13 })
     const frontier = ranked(expensiveModel, { tokens: 3.77, spend: 16.61 })
@@ -193,6 +266,7 @@ describe("gateway-value rank", () => {
     const index = indexCatalog([noZdrModel])
     expect(matchModelId("xai/grok-4.5", index)?.id).toBe(noZdrModel.id)
     expect(matchModelId("spacexai/grok-4.5", index)?.id).toBe(noZdrModel.id)
+    expect(matchModelId("x-ai/grok-4.5:batch", index)?.id).toBe(noZdrModel.id)
   })
 
   it("picks bang-for-buck from DeepsecBench score per run dollar", () => {
@@ -236,11 +310,84 @@ describe("gateway-value rank", () => {
     ])
     const blocked = attachDeepsec(ranked(noZdrModel, {}), [priceyRun])
 
-    expect(cheap.deepsecBang).toBeCloseTo(15.48 / 5.06, 2)
+    expect(cheap.deepsecValue?.bang).toBeCloseTo(15.48 / 5.06, 2)
     expect(pickBangForBuck([cheap, expensive, blocked])?.id).toBe(
       capableModel.id
     )
     expect(pickFrontier([cheap, expensive])?.id).toBe(expensiveModel.id)
+  })
+
+  it("keeps each DeepsecBench run intact", () => {
+    const xhigh = run(capableModel.id, "xhigh", 35.58, 55.98)
+    const medium = run(capableModel.id, "medium", 25.1, 17.95)
+    const model = attachDeepsec(ranked(capableModel, {}), [xhigh, medium])
+
+    expect(model.deepsecBest?.score).toBeCloseTo(35.58)
+    expect(model.deepsecBest?.effort).toBe("xhigh")
+    expect(model.deepsecBest?.costUsd).toBeCloseTo(55.98)
+    expect(model.deepsecBest?.bang).toBeCloseTo(35.58 / 55.98, 3)
+    expect(model.deepsecValue?.effort).toBe("medium")
+    expect(model.deepsecValue?.score).toBeCloseTo(25.1)
+    expect(model.deepsecValue?.bang).toBeCloseTo(25.1 / 17.95, 3)
+    expect(model.deepsecEveryday?.effort).toBe("medium")
+  })
+
+  it("prefers the lowest published effort for the everyday run", () => {
+    const rows = [
+      run(capableModel.id, "xhigh", 30, 10),
+      run(capableModel.id, "high", 20, 5),
+      run(capableModel.id, "default", 15, 6),
+    ]
+    expect(everydayDeepsecRun(rows)?.effort).toBe("default")
+    expect(everydayDeepsecRun([])).toBeNull()
+  })
+
+  it("picks workhorse on everyday quality among adopted mid-price models", () => {
+    const volume = attachDeepsec(ranked(capableModel, { tokens: 22 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+    const quality = attachDeepsec(ranked(noZdrModel, { tokens: 6 }), [
+      run(noZdrModel.id, "medium", 20, 8),
+    ])
+    const underFloor = attachDeepsec(ranked(trainsOnPrompts, { tokens: 1 }), [
+      run(trainsOnPrompts.id, "medium", 30, 4),
+    ])
+
+    expect(pickDefaultWorkhorse([volume, quality, underFloor])?.id).toBe(
+      noZdrModel.id
+    )
+  })
+
+  it("falls frontier back to AA intelligence when Deepsec is empty", () => {
+    const withAa = attachAa(ranked(capableModel, { tokens: 4 }), {
+      intelligence: 41,
+      coding: 38,
+      agentic: null,
+    })
+    const weaker = attachAa(ranked(noZdrModel, { tokens: 3 }), {
+      intelligence: 30,
+      coding: 44,
+      agentic: null,
+    })
+    const benched = attachDeepsec(ranked(expensiveModel, { tokens: 1 }), [
+      run(expensiveModel.id, "medium", 28, 32),
+    ])
+
+    expect(pickFrontier([withAa, weaker])?.id).toBe(capableModel.id)
+    expect(pickFrontier([withAa, weaker, benched])?.id).toBe(expensiveModel.id)
+  })
+
+  it("picks rising from adopted models the bench has not caught", () => {
+    const benched = attachDeepsec(ranked(capableModel, { tokens: 22 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+    const newcomer = ranked(trainsOnPrompts, { tokens: 5 })
+    const tooExpensive = ranked(expensiveModel, { tokens: 9 })
+
+    expect(pickRising([benched, newcomer, tooExpensive])?.id).toBe(
+      trainsOnPrompts.id
+    )
+    expect(pickRising([benched])).toBeNull()
   })
 
   it("lets the open pool pick a no-ZDR model with better bang", () => {
@@ -285,10 +432,69 @@ describe("gateway-value rank", () => {
     expect(pickBangForBuck([privacy, openWinner])?.id).toBe(noZdrModel.id)
   })
 
-  it("flags a cheaper ZDR endpoint as a discount", () => {
-    const model = attachEndpoints(ranked(capableModel, {}), [
+  it("routes to a cheaper ZDR endpoint without calling it a sale", () => {
+    const model = attachEndpoints(
+      ranked(capableModel, {}),
+      [
+        {
+          provider: "list",
+          hasZdr: true,
+          discount: 0,
+          inputPerMillion: 0.2,
+          outputPerMillion: 0.4,
+          blendedPerMillion: 0.25,
+        },
+        {
+          provider: "sale",
+          hasZdr: true,
+          discount: 0,
+          inputPerMillion: 0.1,
+          outputPerMillion: 0.2,
+          blendedPerMillion: 0.125,
+        },
+      ],
+      true
+    )
+    expect(model.endpointProvider).toBe("sale")
+    expect(model.endpointBlendedPerMillion).toBe(0.125)
+    expect(model.discounted).toBe(false)
+    expect(model.discountPercent).toBeNull()
+  })
+
+  it("badges a sale only from the official list-vs-current promo", () => {
+    const routed = attachEndpoints(
+      ranked(capableModel, {}),
+      [
+        {
+          provider: "deepinfra",
+          hasZdr: true,
+          discount: 0,
+          inputPerMillion: 0.075,
+          outputPerMillion: 0.25,
+          blendedPerMillion: 0.11875,
+        },
+      ],
+      true
+    )
+    const onSale = attachPromo(routed, {
+      id: capableModel.id,
+      inputPerMillion: 0.07125,
+      outputPerMillion: 0.2375,
+      listInputPerMillion: 0.15,
+      listOutputPerMillion: 0.5,
+      discountPercent: 53,
+    })
+    expect(onSale.discounted).toBe(true)
+    expect(onSale.discountPercent).toBe(53)
+    expect(onSale.endpointProvider).toBe("deepinfra")
+    expect(attachPromo(routed, undefined).discounted).toBe(false)
+  })
+
+  it("prices the privacy lane at the ZDR endpoint even above list", () => {
+    // capableModel lists at 0.1625 blended; its only ZDR endpoint is pricier.
+    const quotes = [
       {
-        provider: "list",
+        provider: "zdr-only",
         hasZdr: true,
         discount: 0,
         inputPerMillion: 0.2,
@@ -296,17 +502,106 @@ describe("gateway-value rank", () => {
         blendedPerMillion: 0.25,
       },
       {
-        provider: "sale",
-        hasZdr: true,
+        provider: "cheap-no-zdr",
+        hasZdr: false,
         discount: 0,
-        inputPerMillion: 0.1,
-        outputPerMillion: 0.2,
-        blendedPerMillion: 0.125,
+        inputPerMillion: 0.05,
+        outputPerMillion: 0.1,
+        blendedPerMillion: 0.0625,
       },
+    ]
+    const privacy = attachEndpoints(ranked(capableModel, {}), quotes, true)
+    expect(privacy.endpointBlendedPerMillion).toBe(0.25)
+    expect(privacy.endpointProvider).toBe("zdr-only")
+    expect(privacy.discounted).toBe(false)
+
+    const open = attachEndpoints(ranked(capableModel, {}), quotes, false)
+    expect(open.endpointBlendedPerMillion).toBe(0.0625)
+    expect(open.endpointProvider).toBe("cheap-no-zdr")
+    expect(open.discounted).toBe(false)
+  })
+
+  it("keeps list price for the open lane when endpoints cost more", () => {
+    const model = attachEndpoints(
+      ranked(capableModel, { tokens: 10 }),
+      [
+        {
+          provider: "pricier",
+          hasZdr: true,
+          discount: 0,
+          inputPerMillion: 0.2,
+          outputPerMillion: 0.4,
+          blendedPerMillion: 0.25,
+        },
+      ],
+      false
+    )
+    expect(model.endpointBlendedPerMillion).toBeNull()
+    expect(model.discounted).toBe(false)
+    // valueScore stays priced at the 0.1625 list blend.
+    expect(model.valueScore).toBeCloseTo(10 / 0.1625, 4)
+  })
+
+  it("treats zero-priced endpoint quotes as unpriced placeholders", () => {
+    const model = attachEndpoints(
+      ranked(capableModel, { tokens: 10 }),
+      [
+        {
+          provider: "placeholder",
+          hasZdr: true,
+          discount: 0,
+          inputPerMillion: 0,
+          outputPerMillion: 0,
+          blendedPerMillion: 0,
+        },
+      ],
+      false
+    )
+    expect(model.endpointBlendedPerMillion).toBeNull()
+    expect(model.discounted).toBe(false)
+    expect(model.valueScore).toBeCloseTo(10 / 0.1625, 4)
+  })
+
+  it("ignores official promos below the discount threshold", () => {
+    const model = attachPromo(ranked(capableModel, {}), {
+      id: capableModel.id,
+      inputPerMillion: 0.16,
+      outputPerMillion: 0.32,
+      listInputPerMillion: 0.1625,
+      listOutputPerMillion: 0.325,
+      discountPercent: 1.5,
+    })
+    expect(model.discountPercent).toBeNull()
+    expect(model.discounted).toBe(false)
+  })
+
+  it("reads official list-vs-sale promos from the models-page flight", () => {
+    const rsc = `
+1:"$Sreact.fragment"
+2:[{"providerScope":"$undefined","slug":"glm-5.3-flash","copyString":"zai/glm-5.3-flash","inputCost":"0.07125","outputCost":"0.2375","inputListCostTiers":[{"amount":"0.15","minInclusive":0,"priceType":"list"}],"outputListCostTiers":[{"amount":"0.5","minInclusive":0,"priceType":"list"}]},{"providerScope":"$undefined","slug":"gemini-3.7-flash","copyString":"google/gemini-3.7-flash","inputCost":"0.75","outputCost":"3.75","inputListCostTiers":[{"amount":"1.50","minInclusive":0,"priceType":"list"}],"outputListCostTiers":[{"amount":"7.5","minInclusive":0,"priceType":"list"}]},{"providerScope":"$undefined","slug":"llama-3.1-8b","copyString":"meta/llama-3.1-8b","inputCost":"0.02","outputCost":"0.05","inputListCostTiers":"$undefined","outputListCostTiers":"$undefined"},{"providerScope":"$undefined","slug":"gpt-5.6-sol-fast","copyString":"openai/gpt-5.6-sol-fast","inputCost":"4","outputCost":"20","inputListCostTiers":["$116:props:models:13:serviceTierPricing:priority:inputCostTiers:1"],"outputListCostTiers":["$116:props:models:13:serviceTierPricing:priority:outputCostTiers:1"]},{"providerScope":"$undefined","slug":"minimax-m3","copyString":"minimax/minimax-m3","inputCost":"0","outputCost":"0","inputListCostTiers":[{"amount":"0.6","minInclusive":0,"priceType":"list"}],"outputListCostTiers":[{"amount":"2.4","minInclusive":0,"priceType":"list"}]}]
+`
+    const promos = parseModelsPageFlight(rsc)
+    expect(promos.map((promo) => promo.id)).toEqual([
+      "zai/glm-5.3-flash",
+      "google/gemini-3.7-flash",
     ])
-    expect(model.discounted).toBe(true)
-    expect(model.zdrProvider).toBe("sale")
-    expect(model.discountPercent).toBeGreaterThan(20)
+    expect(promos[0]?.discountPercent).toBe(53)
+    expect(promos[0]?.inputPerMillion).toBeCloseTo(0.07125)
+    expect(promos[0]?.listInputPerMillion).toBeCloseTo(0.15)
+    expect(promos[1]?.discountPercent).toBe(50)
+  })
+
+  it("picks the cheapest router over a discounted pricier one", () => {
+    const cheapest = ranked(capableModel, { tokens: 5 })
+    const discountedPricier = {
+      ...ranked(trainsOnPrompts, { tokens: 5 }),
+      discounted: true,
+      discountPercent: 40,
+      endpointBlendedPerMillion: 0.41,
+    }
+    expect(pickCheapRouter([discountedPricier, cheapest])?.id).toBe(
+      capableModel.id
+    )
   })
 
   it("parses the DeepsecBench ranked table", () => {
@@ -359,6 +654,45 @@ describe("gateway-value rank", () => {
     expect(formatDuration(795.22)).toBe("13m 15s")
     expect(formatDuration(67.116)).toBe("1m 7s")
   })
+
+  it("parses Artificial Analysis indices from OpenRouter payloads", () => {
+    const fromModels = parseOpenRouterModels({
+      data: [
+        {
+          id: "openai/gpt-5.6-sol",
+          benchmarks: {
+            artificial_analysis: {
+              intelligence_index: 71.2,
+              coding_index: 65.8,
+              agentic_index: 58.3,
+            },
+          },
+        },
+        { id: "openai/gpt-5.6-luna" },
+      ],
+    })
+    expect(fromModels.get("openai/gpt-5.6-sol")?.intelligence).toBeCloseTo(71.2)
+    expect(fromModels.has("openai/gpt-5.6-luna")).toBe(false)
+
+    const fromBenches = parseOpenRouterBenchmarks({
+      data: [
+        {
+          source: "artificial-analysis",
+          model_permaslug: "deepseek/deepseek-v4-flash",
+          intelligence_index: 40,
+          coding_index: 38,
+          agentic_index: null,
+        },
+        {
+          source: "design-arena",
+          model_permaslug: "openai/gpt-5.6-sol",
+          intelligence_index: 99,
+        },
+      ],
+    })
+    expect(fromBenches.get("deepseek/deepseek-v4-flash")?.coding).toBe(38)
+    expect(fromBenches.has("openai/gpt-5.6-sol")).toBe(false)
+  })
 })
 
 describe("gateway-value snapshot", () => {
@@ -389,18 +723,21 @@ describe("gateway-value snapshot", () => {
       zdrModels: 80,
       privacyModels: 72,
       deepsecRuns: 35,
+      aaModels: 0,
       picks: {
         privacy: {
           bangForBuck: cheap,
           workhorse: cheap,
           cheapRouter: cheap,
           frontier: null,
+          rising: null,
         },
         open: {
           bangForBuck: cheap,
           workhorse: cheap,
           cheapRouter: cheap,
           frontier: null,
+          rising: null,
         },
       },
       lists: {
@@ -411,7 +748,11 @@ describe("gateway-value snapshot", () => {
         ["deepseek", { requests: 20, tokens: 28, spend: 2 }],
         ["anthropic", { requests: 18, tokens: 32, spend: 64 }],
       ]),
-      unmatched: { leaderboard: ["Mystery"], deepsec: ["xai/missing (xhigh)"] },
+      unmatched: {
+        leaderboard: ["Mystery"],
+        deepsec: ["xai/missing (xhigh)"],
+        aa: [],
+      },
     })
 
     expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)

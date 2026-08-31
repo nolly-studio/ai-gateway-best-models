@@ -6,12 +6,11 @@ import { LabsReadout } from "@/components/labs-readout"
 import { ModelLedger } from "@/components/model-ledger"
 import { HeroLead } from "@/components/hero-lead"
 import { PageFrame, PageHeader } from "@/components/page-frame"
-import { PickCards } from "@/components/pick-cards"
 import { SiteFooter } from "@/components/site-footer"
 import { TextLink } from "@/components/text-link"
+import { WeeklyPicks } from "@/components/weekly-picks"
 import { formatWindow } from "@/lib/format"
 import { weekPagePath } from "@/lib/gateway-snapshot"
-import { groupPicks, laneHeading } from "@/lib/picks"
 import { readHistory, readSnapshot } from "@/lib/read-snapshot"
 import {
   homeDescription,
@@ -49,8 +48,6 @@ export default async function Page() {
     readSnapshot(),
     readHistory(),
   ])
-  const privacyPicks = groupPicks(snapshot.picks.privacy)
-  const openPicks = groupPicks(snapshot.picks.open)
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
   const archives = [...history.weeks].toReversed()
 
@@ -70,17 +67,7 @@ export default async function Page() {
         <HeroLead snapshot={snapshot} />
       </PageHeader>
 
-      <PickCards
-        hint="Zero data retention and no training on prompts"
-        picks={privacyPicks}
-        title={laneHeading("privacy")}
-      />
-      <PickCards
-        hint="Includes models that train or skip ZDR"
-        picks={openPicks}
-        showPolicy
-        title={laneHeading("open")}
-      />
+      <WeeklyPicks picks={snapshot.picks} />
       <ModelLedger lists={snapshot.lists} />
       <LabsReadout labs={snapshot.labs} />
       <FaqList faqs={siteFaqs(snapshot)} />

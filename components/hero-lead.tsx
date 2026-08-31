@@ -131,8 +131,7 @@ export function HeroLead({
   return (
     <>
       <p>
-        This week ({window}), the best{" "}
-        <TextLink href="/methodology">ZDR + no-training</TextLink> pick on{" "}
+        This week ({window}), the best pick on{" "}
         <TextLink external href={GATEWAY_URL}>
           AI Gateway
         </TextLink>{" "}

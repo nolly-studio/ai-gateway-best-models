@@ -7,10 +7,13 @@
  * Data:
  *   Catalog       https://ai-gateway.vercel.sh/v1/models
  *   Endpoints     https://ai-gateway.vercel.sh/v1/models/{id}/endpoints
+ *   Models page   https://vercel.com/ai-gateway/models (official list-vs-sale)
  *   Models        https://vercel.com/api/ai/leaderboard-export?dataset=models&modality=text
  *   Labs          https://vercel.com/api/ai/leaderboard-export?dataset=labs&modality=text
  *   DeepsecBench  https://vercel.com/ai-gateway/leaderboards/deepsecbench/results.json
+ *   AA indices    https://openrouter.ai/api/v1/models (fallback: /benchmarks)
  *   License       CC BY 4.0 — © 2026 Vercel, AI Gateway Leaderboard Data
+ *                 Artificial Analysis via OpenRouter, CC BY 4.0
  */
 
 import { mkdir, writeFile } from "node:fs/promises"
@@ -28,16 +31,21 @@ import {
 } from "../../lib/gateway-snapshot"
 import { readHistory } from "../../lib/read-snapshot"
 import {
+  fetchAaIndices,
   fetchCatalog,
   fetchDeepsecBench,
   fetchEndpointQuotes,
   fetchLabsLeaderboard,
   fetchLeaderboard,
+  fetchOfficialPromos,
 } from "./fetch"
 import {
+  attachAa,
   attachDeepsec,
   attachEndpoints,
+  attachPromo,
   averageAdoption,
+  canonicalOpenRouterId,
   CHEAP_BLEND_USD,
   hasPrivacy,
   hasZdr,
@@ -50,12 +58,15 @@ import {
   pickCheapRouter,
   pickDefaultWorkhorse,
   pickFrontier,
+  pickRising,
   rankFromBoard,
   rankFromCatalog,
   uniqueSortedDates,
+  type AaIndices,
   type Adoption,
   type DeepsecRow,
   type EndpointQuote,
+  type OfficialPromo,
   type RankedModel,
 } from "./rank"
 import { buildLists, buildSnapshot, type RankedPicks } from "./snapshot"
@@ -70,12 +81,13 @@ function pct(value: number): string {
 
 function line(model: RankedModel): string {
   const value = model.valueScore == null ? "n/a" : model.valueScore.toFixed(2)
+  const valueRun = model.deepsecValue
   const bang =
-    model.deepsecBang == null
+    valueRun?.bang == null
       ? "n/a"
-      : `${model.deepsecBang.toFixed(2)}${model.deepsecEffort ? `@${model.deepsecEffort}` : ""}`
+      : `${valueRun.bang.toFixed(2)}${valueRun.effort ? `@${valueRun.effort}` : ""}`
   const score =
-    model.deepsecScore == null ? "n/a" : model.deepsecScore.toFixed(1)
+    model.deepsecBest == null ? "n/a" : model.deepsecBest.score.toFixed(1)
   const disc =
     model.discountPercent == null
       ? ""
@@ -86,7 +98,7 @@ function line(model: RankedModel): string {
     model.id.padEnd(42),
     `zdr=${zdr}`.padEnd(9),
     `npt=${npt}`.padEnd(9),
-    `blend=${money(model.zdrBlendedPerMillion ?? model.blendedPerMillion)}`.padEnd(
+    `blend=${money(model.endpointBlendedPerMillion ?? model.blendedPerMillion)}`.padEnd(
       14
     ),
     `deepsec=${score}`.padEnd(13),
@@ -138,22 +150,53 @@ function deepsecByCatalogId(
   return byId
 }
 
+function aaByCatalogId(
+  rows: Map<string, AaIndices>,
+  index: ReturnType<typeof indexCatalog>
+): { byId: Map<string, AaIndices>; unmatched: string[] } {
+  const byId = new Map<string, AaIndices>()
+  const unmatched: string[] = []
+  for (const [id, indices] of rows) {
+    const model = matchModelId(id, index)
+    if (!model) {
+      unmatched.push(canonicalOpenRouterId(id))
+      continue
+    }
+    if (!byId.has(model.id)) {
+      byId.set(model.id, indices)
+    }
+  }
+  return { byId, unmatched }
+}
+
 function enrich(
   model: RankedModel,
   deepsec: Map<string, DeepsecRow[]>,
-  quotes: Map<string, EndpointQuote[]>
+  aa: Map<string, AaIndices>,
+  quotes: Map<string, EndpointQuote[]>,
+  promos: Map<string, OfficialPromo>,
+  zdrOnly: boolean
 ): RankedModel {
   const withBench = attachDeepsec(model, deepsec.get(model.id) ?? [])
-  return attachEndpoints(withBench, quotes.get(model.id) ?? [])
+  const withAa = attachAa(withBench, aa.get(model.id))
+  const withEndpoints = attachEndpoints(
+    withAa,
+    quotes.get(model.id) ?? [],
+    zdrOnly
+  )
+  return attachPromo(withEndpoints, promos.get(model.id))
 }
 
 export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
-  const [catalog, rows, labRows, deepsecRows] = await Promise.all([
-    fetchCatalog(),
-    fetchLeaderboard(),
-    fetchLabsLeaderboard(),
-    fetchDeepsecBench(),
-  ])
+  const [catalog, rows, labRows, deepsecRows, aaRows, promos] =
+    await Promise.all([
+      fetchCatalog(),
+      fetchLeaderboard(),
+      fetchLabsLeaderboard(),
+      fetchDeepsecBench(),
+      fetchAaIndices(),
+      fetchOfficialPromos(),
+    ])
 
   const dates = uniqueSortedDates(rows)
   const { from, to, window } = lookbackWindow(dates)
@@ -165,24 +208,34 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
   )
   const adoptionById = adoptionByCatalogId(adoption, index)
   const deepsec = deepsecByCatalogId(deepsecRows, index)
+  const { byId: aa, unmatched: unmatchedAa } = aaByCatalogId(aaRows, index)
 
   const quotes = await fetchEndpointQuotes(catalog.map((model) => model.id))
 
-  const leaderboard = [...adoption.entries()]
-    .map(([name, metrics]) =>
-      rankFromBoard(name, matchCatalog(name, index), metrics)
-    )
-    .map((model) => enrich(model, deepsec, quotes))
-  const unmatched = leaderboard.filter((model) => model.unmatched)
-
-  const catalogRanked = catalog
+  const boardRanked = [...adoption.entries()].map(([name, metrics]) =>
+    rankFromBoard(name, matchCatalog(name, index), metrics)
+  )
+  const catalogBase = catalog
     .map((model) => rankFromCatalog(model, adoptionById.get(model.id)))
     .filter((model): model is RankedModel => model != null)
-    .map((model) => enrich(model, deepsec, quotes))
 
-  const zdrRanked = catalogRanked.filter(hasZdr)
-  const privacyRanked = catalogRanked.filter(hasPrivacy)
-  const privacyLeaderboard = leaderboard.filter(hasPrivacy)
+  // Each lane prices models against the endpoints it may route through:
+  // the privacy lane pays the cheapest ZDR endpoint, the open lane pays
+  // min(list, cheapest endpoint of any kind).
+  const openLeaderboard = boardRanked.map((model) =>
+    enrich(model, deepsec, aa, quotes, promos, false)
+  )
+  const privacyLeaderboard = boardRanked
+    .filter(hasPrivacy)
+    .map((model) => enrich(model, deepsec, aa, quotes, promos, true))
+  const openRanked = catalogBase.map((model) =>
+    enrich(model, deepsec, aa, quotes, promos, false)
+  )
+  const privacyRanked = catalogBase
+    .filter(hasPrivacy)
+    .map((model) => enrich(model, deepsec, aa, quotes, promos, true))
+
+  const unmatched = openLeaderboard.filter((model) => model.unmatched)
   const unmatchedDeepsec = deepsecRows.filter(
     (row) => matchModelId(row.id, index) == null
   )
@@ -190,16 +243,17 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
   return buildSnapshot({
     window: { from, to },
     languageModels: catalog.length,
-    zdrModels: zdrRanked.length,
+    zdrModels: catalogBase.filter(hasZdr).length,
     privacyModels: privacyRanked.length,
     deepsecRuns: deepsecRows.length,
+    aaModels: aa.size,
     picks: {
       privacy: picksFrom(privacyRanked, privacyLeaderboard),
-      open: picksFrom(catalogRanked, leaderboard),
+      open: picksFrom(openRanked, openLeaderboard),
     },
     lists: {
       privacy: buildLists(privacyRanked, privacyLeaderboard),
-      open: buildLists(catalogRanked, leaderboard),
+      open: buildLists(openRanked, openLeaderboard),
     },
     labs,
     unmatched: {
@@ -207,6 +261,7 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
       deepsec: [
         ...new Set(unmatchedDeepsec.map((row) => `${row.id} (${row.effort})`)),
       ],
+      aa: [...new Set(unmatchedAa)],
     },
   })
 }
@@ -237,6 +292,7 @@ function picksFrom(
     workhorse: pickDefaultWorkhorse(leaderboard),
     cheapRouter: pickCheapRouter(ranked),
     frontier: pickFrontier(leaderboard),
+    rising: pickRising(ranked),
   }
 }
 
@@ -248,6 +304,13 @@ function printLanePicks(
   console.log(
     `  BANG FOR BUCK  ${picks.bangForBuck ? picks.bangForBuck.id : "none"}`
   )
+  const bangScore = picks.bangForBuck?.deepsecValue?.score
+  if (picks.bangForBuck && (bangScore ?? 0) < MIN_DEEPSEC_SCORE) {
+    console.warn(
+      `  WARNING: no model met the DeepsecBench floor (score ≥ ${MIN_DEEPSEC_SCORE}); ` +
+        `bang-for-buck fell back to ${picks.bangForBuck.id} (score ${bangScore?.toFixed(1) ?? "n/a"})`
+    )
+  }
   console.log(
     `  WORKHORSE      ${picks.workhorse ? picks.workhorse.id : "none"}`
   )
@@ -255,6 +318,7 @@ function printLanePicks(
     `  CHEAP ROUTER   ${picks.cheapRouter ? picks.cheapRouter.id : "none"}`
   )
   console.log(`  FRONTIER       ${picks.frontier ? picks.frontier.id : "none"}`)
+  console.log(`  RISING         ${picks.rising ? picks.rising.id : "none"}`)
 }
 
 function laneListLabel(lane: SnapshotLaneKey): string {
@@ -281,7 +345,7 @@ function printLaneLists(lane: SnapshotLaneKey, lists: SnapshotLists) {
     lists.deepsecScore.map(asRankedLine)
   )
   section(
-    `Discounted ${label} (cheaper provider than list)`,
+    `Discounted ${label} (official list-vs-sale)`,
     lists.discounted.map(asRankedLine)
   )
   section(
@@ -303,7 +367,10 @@ function printReport(snapshot: GatewaySnapshot) {
     `DeepsecBench ${stats.deepsecRuns} runs  ·  bang = score / run $  ·  floor score ≥ ${MIN_DEEPSEC_SCORE}`
   )
   console.log(
-    "ZDR+NPT = catalog all|some  ·  discount = cheaper ZDR endpoint than list"
+    `Artificial Analysis ${stats.aaModels} models  ·  frontier fallback only  ·  card footnote`
+  )
+  console.log(
+    "ZDR+NPT = catalog all|some  ·  discount = official models-page list vs sale"
   )
 
   printLanePicks("ZDR + no-training", picks.privacy)
@@ -316,6 +383,13 @@ function printReport(snapshot: GatewaySnapshot) {
     console.log(
       `  ${lab.name.padEnd(16)}  tok=${pct(lab.tokensShare)}  spend=${pct(lab.spendShare)}  req=${pct(lab.requestsShare)}`
     )
+  }
+
+  if (unmatched.aa.length > 0) {
+    console.log("\nUnmatched Artificial Analysis ids")
+    for (const id of unmatched.aa) {
+      console.log(`  ${id}`)
+    }
   }
 
   if (unmatched.deepsec.length > 0) {
@@ -349,11 +423,9 @@ function asRankedLine(
     noTraining: model.noTraining,
     inputPerMillion: model.inputPerMillion,
     outputPerMillion: model.outputPerMillion,
-    cacheReadPerMillion: null,
     blendedPerMillion: model.blendedPerMillion,
-    generationPerMillion: null,
-    zdrBlendedPerMillion: model.zdrBlendedPerMillion,
-    zdrProvider: model.zdrProvider,
+    endpointBlendedPerMillion: model.zdrBlendedPerMillion,
+    endpointProvider: model.zdrProvider,
     discounted: model.discounted,
     discountPercent: model.discountPercent,
     requestsShare: model.requestsShare,
@@ -361,11 +433,10 @@ function asRankedLine(
     spendShare: model.spendShare,
     valueScore: model.valueScore,
     overpay: model.overpay,
-    deepsecScore: model.deepsecScore,
-    deepsecEffort: model.deepsecEffort,
-    deepsecCost: model.deepsecCost,
-    deepsecBang: model.deepsecBang,
-    unitBang: null,
+    deepsecBest: model.deepsecBest,
+    deepsecValue: model.deepsecValue,
+    deepsecEveryday: model.deepsecEveryday,
+    aa: model.aa,
     description: "",
   }
 }
