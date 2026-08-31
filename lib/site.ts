@@ -1,6 +1,5 @@
-export const SITE_ORIGIN = "https://bestmodels.dev"
-export const SITE_HOST = "bestmodels.dev"
-export const WWW_HOST = "www.bestmodels.dev"
+export const SITE_ORIGIN = "https://www.bestmodels.dev"
+export const SITE_HOST = "www.bestmodels.dev"
 export const SITE_NAME = "bestmodels.dev"
 export const PUBLISHER_NAME = "Nolly Studio"
 export const GITHUB_REPO_URL =
