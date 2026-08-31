@@ -1,25 +1,25 @@
-import type { ReactNode } from "react"
-import type { Metadata } from "next"
-import { GeistMono } from "geist/font/mono"
+import type { ReactNode } from "react";
+import type { Metadata } from "next";
+import { GeistMono } from "geist/font/mono";
 import {
   GeistPixelCircle,
   GeistPixelGrid,
   GeistPixelLine,
   GeistPixelSquare,
   GeistPixelTriangle,
-} from "geist/font/pixel"
-import { GeistSans } from "geist/font/sans"
+} from "geist/font/pixel";
+import { GeistSans } from "geist/font/sans";
 
-import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
 import {
   SITE_DESCRIPTION,
   SITE_NAME,
   SITE_ORIGIN,
   SITE_TITLE,
   SITE_TITLE_TEMPLATE,
-} from "@/lib/site"
-import { cn } from "@/lib/utils"
+} from "@/lib/site";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
@@ -49,31 +49,31 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
-}
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: ReactNode
+  children: ReactNode;
 }>) {
   return (
     <html
       lang="en"
       suppressHydrationWarning
       className={cn(
-        "font-sans antialiased",
+        "font-sans antialiased overscroll-none md:overscroll-auto",
         GeistSans.variable,
         GeistMono.variable,
         GeistPixelSquare.variable,
         GeistPixelGrid.variable,
         GeistPixelCircle.variable,
         GeistPixelTriangle.variable,
-        GeistPixelLine.variable
+        GeistPixelLine.variable,
       )}
     >
       <body>
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
-  )
+  );
 }

@@ -5,7 +5,8 @@ import { FaqList } from "@/components/faq-list"
 import { JsonLd } from "@/components/json-ld"
 import { LabsReadout } from "@/components/labs-readout"
 import { ModelLedger } from "@/components/model-ledger"
-import { PageFrame, SiteNav } from "@/components/page-frame"
+import { HeroLead } from "@/components/hero-lead"
+import { PageFrame, PageHeader } from "@/components/page-frame"
 import { PickCards } from "@/components/pick-cards"
 import { SiteFooter } from "@/components/site-footer"
 import { TextLink } from "@/components/text-link"
@@ -75,22 +76,27 @@ export default async function WeekPage({ params }: WeekPageProps) {
   return (
     <PageFrame>
       <JsonLd data={weekJsonLd(snapshot)} />
-      <header className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-mono text-[11.5px] text-ink-3">
+      <PageHeader
+        current="picks"
+        meta={
+          <>
             {updatedLabel(snapshot)} · {window} · {snapshot.stats.languageModels}{" "}
             models · {snapshot.stats.privacyModels} ZDR+NPT
-          </p>
-          <SiteNav />
-        </div>
-        <h1 className="font-pixel-square text-[22px] leading-tight font-semibold text-balance text-ink">
-          Best models on AI Gateway for {window}
-        </h1>
-        <p className="max-w-prose text-[13.5px] leading-relaxed text-pretty text-ink-2">
-          {homeLead(snapshot)} Snapshot of the weekly ranking.{" "}
-          <TextLink href="/">See the current week</TextLink>.
-        </p>
-      </header>
+          </>
+        }
+        title={`Best models on AI Gateway for ${window}`}
+      >
+        <HeroLead
+          note={
+            <>
+              {" "}
+              Snapshot of the weekly ranking.{" "}
+              <TextLink href="/">See the current week</TextLink>.
+            </>
+          }
+          snapshot={snapshot}
+        />
+      </PageHeader>
 
       <PickCards
         hint="Zero data retention and no training on prompts"

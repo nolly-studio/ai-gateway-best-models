@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
+
 import { ImageResponse } from "next/og"
 
 import { blendOf, formatWindow, money } from "@/lib/format"
@@ -12,6 +15,13 @@ export const ogSize = {
 
 export const ogContentType = "image/png"
 
+const canvas = "#0a0a0a"
+const surface = "#171717"
+const ink = "#fafafa"
+const ink2 = "#c7c7c7"
+const ink3 = "#a3a3a3"
+const line = "rgba(255,255,255,0.1)"
+
 export function snapshotOgAlt(snapshot: GatewaySnapshot): string {
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
@@ -23,6 +33,29 @@ export function snapshotOgAlt(snapshot: GatewaySnapshot): string {
     return `${SITE_NAME}: ${value.name} for ${window}`
   }
   return `${SITE_NAME}: best AI Gateway models for ${window}`
+}
+
+async function loadGeistFonts() {
+  const dir = join(process.cwd(), "node_modules/geist/dist/fonts/geist-sans")
+  const [regular, semiBold] = await Promise.all([
+    readFile(join(dir, "Geist-Regular.ttf")),
+    readFile(join(dir, "Geist-SemiBold.ttf")),
+  ])
+
+  return [
+    {
+      name: "Geist",
+      data: regular,
+      style: "normal" as const,
+      weight: 400 as const,
+    },
+    {
+      name: "Geist",
+      data: semiBold,
+      style: "normal" as const,
+      weight: 600 as const,
+    },
+  ]
 }
 
 function PickRow({
@@ -40,10 +73,10 @@ function PickRow({
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        padding: "28px 32px",
-        background: "#ffffff",
+        padding: "28px 32px 52px",
+        background: surface,
         borderRadius: 16,
-        border: "1px solid rgba(0,0,0,0.06)",
+        border: `1px solid ${line}`,
         flex: 1,
       }}
     >
@@ -51,7 +84,7 @@ function PickRow({
         style={{
           display: "flex",
           fontSize: 22,
-          color: "#6b6b6b",
+          color: ink3,
           letterSpacing: 0.2,
         }}
       >
@@ -62,26 +95,27 @@ function PickRow({
           display: "flex",
           fontSize: 40,
           fontWeight: 600,
-          color: "#171717",
+          color: ink,
           lineHeight: 1.15,
         }}
       >
         {name}
       </div>
-      <div style={{ display: "flex", fontSize: 24, color: "#525252" }}>
+      <div style={{ display: "flex", fontSize: 24, color: ink2 }}>
         {blend}
       </div>
     </div>
   )
 }
 
-export function snapshotOgImage(
+export async function snapshotOgImage(
   snapshot: GatewaySnapshot,
   title = "Best AI Gateway models"
 ) {
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
+  const fonts = await loadGeistFonts()
 
   return new ImageResponse(
     (
@@ -92,9 +126,10 @@ export function snapshotOgImage(
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          padding: 64,
-          background: "#f7f7f7",
-          color: "#171717",
+          padding: "64px 64px 80px",
+          background: canvas,
+          color: ink,
+          fontFamily: "Geist",
         }}
       >
         <div
@@ -109,7 +144,7 @@ export function snapshotOgImage(
               style={{
                 display: "flex",
                 fontSize: 24,
-                color: "#6b6b6b",
+                color: ink3,
                 letterSpacing: 0.4,
               }}
             >
@@ -131,7 +166,7 @@ export function snapshotOgImage(
             style={{
               display: "flex",
               fontSize: 24,
-              color: "#525252",
+              color: ink2,
             }}
           >
             {window}
@@ -159,6 +194,6 @@ export function snapshotOgImage(
         </div>
       </div>
     ),
-    { ...ogSize }
+    { ...ogSize, fonts }
   )
 }

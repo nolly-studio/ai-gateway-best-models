@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 
 import { FaqList } from "@/components/faq-list"
 import { JsonLd } from "@/components/json-ld"
-import { PageFrame, SiteNav } from "@/components/page-frame"
+import { PageFrame, PageHeader } from "@/components/page-frame"
 import { SiteFooter } from "@/components/site-footer"
 import { TextLink } from "@/components/text-link"
 import {
@@ -42,22 +42,15 @@ export default async function MethodologyPage() {
   return (
     <PageFrame>
       <JsonLd data={methodologyJsonLd()} />
-      <header className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-mono text-[11.5px] text-ink-3">
-            Ranking rules · 7-day lookback
-          </p>
-          <SiteNav />
-        </div>
-        <h1 className="font-pixel-square text-[22px] leading-tight font-semibold text-balance text-ink">
-          How we rank AI Gateway models
-        </h1>
-        <p className="max-w-prose text-[13.5px] leading-relaxed text-pretty text-ink-2">
-          Independent weekly ranking. Not affiliated with Vercel. Catalog,
-          adoption, and DeepsecBench numbers come from Vercel AI Gateway data
-          licensed CC BY 4.0.
-        </p>
-      </header>
+      <PageHeader
+        current="methodology"
+        meta="Ranking rules · 7-day lookback"
+        title="How we rank AI Gateway models"
+      >
+        Independent weekly ranking. Not affiliated with Vercel. Catalog,
+        adoption, and DeepsecBench numbers come from Vercel AI Gateway data
+        licensed CC BY 4.0.
+      </PageHeader>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold text-ink">
