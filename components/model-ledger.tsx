@@ -54,7 +54,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
   return (
     <section className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3 px-0.5">
-        <h2 className="text-[13px] font-semibold text-balance text-ink">
+        <h2 className="text-sm font-semibold text-balance text-ink">
           Ranked AI Gateway models
         </h2>
         <div className="flex items-center gap-1">

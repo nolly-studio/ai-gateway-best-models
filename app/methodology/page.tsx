@@ -53,7 +53,7 @@ export default async function MethodologyPage() {
       </PageHeader>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-semibold text-ink">
+        <h2 className="text-sm font-semibold text-ink">
           What the weekly picks mean
         </h2>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-[13.5px] leading-relaxed text-pretty text-ink-2">
@@ -102,7 +102,7 @@ export default async function MethodologyPage() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-[13px] font-semibold text-ink">Sources</h2>
+        <h2 className="text-sm font-semibold text-ink">Sources</h2>
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[13.5px] leading-relaxed text-ink-2">
           <li>
             <TextLink external href={CATALOG_URL}>

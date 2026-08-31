@@ -87,7 +87,7 @@ export default async function Page() {
 
       {archives.length > 0 ? (
         <section className="flex flex-col gap-1.5">
-          <h2 className="text-[13px] font-semibold text-ink">Weekly archives</h2>
+          <h2 className="text-sm font-semibold text-ink">Weekly archives</h2>
           <p className="text-[13px] leading-relaxed text-pretty text-ink-2">
             {archives.map((week, index) => (
               <span key={week.week}>

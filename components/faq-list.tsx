@@ -9,7 +9,7 @@ export function FaqList({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-[13px] font-semibold text-balance text-ink">
+      <h2 className="text-sm font-semibold text-balance text-ink">
         {title}
       </h2>
       <dl className="flex flex-col gap-3">

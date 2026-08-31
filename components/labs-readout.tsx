@@ -10,7 +10,7 @@ export function LabsReadout({ labs }: { labs: SnapshotLab[] }) {
     <section className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3 px-0.5">
         <div className="flex items-center gap-2">
-          <h2 className="text-[13px] font-semibold text-balance text-ink">
+          <h2 className="text-sm font-semibold text-balance text-ink">
             Which labs developers actually use
           </h2>
           <span className="inline-flex h-5 items-center rounded-md bg-inset px-1.5 text-[11.5px] font-medium text-ink-2 tabular-nums shadow-hairline">

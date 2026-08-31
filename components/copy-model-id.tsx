@@ -184,7 +184,7 @@ export function CopyModelId({
         <button
           aria-label={label}
           className={cn(
-            "relative inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 font-mono text-[12px] text-ink transition-[background-color,color,transform] duration-150 ease-out before:absolute before:-inset-x-0.5 before:-inset-y-1.5 before:content-[''] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:scale-[0.96]",
+            "relative inline-flex max-w-full items-center gap-1.5 rounded-md px-1.5 py-0.5 font-mono text-xs whitespace-nowrap text-ink transition-[background-color,color,transform] duration-150 ease-out before:absolute before:-inset-x-0.5 before:-inset-y-1.5 before:content-[''] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:scale-[0.96]",
             copied
               ? "bg-green-tint"
               : failed
@@ -197,7 +197,7 @@ export function CopyModelId({
           title={label}
           type="button"
         >
-          <span className="min-w-0 text-left break-all">{id}</span>
+          <span className="min-w-0 truncate text-left">{id}</span>
           <StatusIcon copied={copied} />
           <StatusLive failed={failed} copied={copied} id={id} />
         </button>
@@ -230,7 +230,7 @@ export function CopyModelId({
         <button
           aria-label={label}
           className={cn(
-            "inline-flex h-7 items-center gap-1.5 rounded-control bg-surface px-2.5 text-[12.5px] font-medium shadow-btn transition-[background-color,color,transform] duration-100 hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:scale-[0.96]",
+            "inline-flex h-7 items-center gap-1.5 rounded-control bg-surface px-2.5 text-xs font-medium shadow-btn transition-[background-color,color,transform] duration-100 select-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none active:scale-[0.96]",
             failed ? "text-destructive" : "text-ink",
             className
           )}
