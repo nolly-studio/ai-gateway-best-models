@@ -6,7 +6,7 @@
  * Capable = tool-use + context ≥ 128K (vision is not required).
  * ZDR = catalog `zdr` is `all` or `some` (matches ?zdr=true).
  * NPT = catalog `no_training` is `all` or `some` (matches ?npt=true).
- * Privacy = ZDR and NPT.
+ * Privacy = ZDR and NPT. Pickers rank whatever pool they are given.
  * Bang-for-buck = DeepsecBench score / run cost (Score vs Cost chart).
  * Discount = cheaper ZDR endpoint than list, or `pricing.discount` > 0.
  */
@@ -550,7 +550,6 @@ export function pickDefaultWorkhorse(
 ): RankedModel | null {
   const candidates = leaderboard.filter(
     (model) =>
-      hasPrivacy(model) &&
       isCapable(model) &&
       effectiveBlend(model) != null &&
       (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <= MID_BLEND_USD
@@ -576,16 +575,12 @@ export function pickDefaultWorkhorse(
 export function pickCheapRouter(models: RankedModel[]): RankedModel | null {
   const adopted = models.filter(
     (model) =>
-      hasPrivacy(model) &&
       isCapable(model) &&
       hasAdoption(model) &&
       effectiveBlend(model) != null &&
       (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <= CHEAP_BLEND_USD
   )
-  const pool =
-    adopted.length > 0
-      ? adopted
-      : models.filter((model) => hasPrivacy(model) && isCapable(model))
+  const pool = adopted.length > 0 ? adopted : models.filter(isCapable)
   return (
     pool
       .toSorted((left, right) => {
@@ -603,8 +598,7 @@ export function pickCheapRouter(models: RankedModel[]): RankedModel | null {
 
 export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
   const withScore = leaderboard.filter(
-    (model) =>
-      hasPrivacy(model) && isCapable(model) && model.deepsecScore != null
+    (model) => isCapable(model) && model.deepsecScore != null
   )
   if (withScore.length > 0) {
     return (
@@ -622,7 +616,7 @@ export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
   }
 
   const withOverpay = leaderboard.filter(
-    (model) => hasPrivacy(model) && isCapable(model) && model.overpay != null
+    (model) => isCapable(model) && model.overpay != null
   )
   if (withOverpay.length > 0) {
     return (
@@ -640,9 +634,7 @@ export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
 
   return (
     leaderboard
-      .filter(
-        (model) => hasPrivacy(model) && isCapable(model) && model.spendShare > 0
-      )
+      .filter((model) => isCapable(model) && model.spendShare > 0)
       .toSorted((left, right) => right.spendShare - left.spendShare)
       .at(0) ?? null
   )
@@ -651,14 +643,13 @@ export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
 export function pickBangForBuck(models: RankedModel[]): RankedModel | null {
   const qualifying = models.filter(
     (model) =>
-      hasPrivacy(model) &&
       model.deepsecBang != null &&
       (model.deepsecScore ?? 0) >= MIN_DEEPSEC_SCORE
   )
   const pool =
     qualifying.length > 0
       ? qualifying
-      : models.filter((model) => hasPrivacy(model) && model.deepsecBang != null)
+      : models.filter((model) => model.deepsecBang != null)
   return (
     pool
       .toSorted((left, right) => {

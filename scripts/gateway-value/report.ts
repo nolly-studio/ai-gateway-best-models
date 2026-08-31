@@ -19,12 +19,14 @@ import { dirname, join } from "node:path"
 import {
   HISTORY_RELATIVE_PATH,
   SNAPSHOT_RELATIVE_PATH,
-  readHistory,
   toHistoryWeek,
   upsertHistory,
   weekSnapshotRelativePath,
   type GatewaySnapshot,
+  type SnapshotLaneKey,
+  type SnapshotLists,
 } from "../../lib/gateway-snapshot"
+import { readHistory } from "../../lib/read-snapshot"
 import {
   fetchCatalog,
   fetchDeepsecBench,
@@ -56,7 +58,7 @@ import {
   type EndpointQuote,
   type RankedModel,
 } from "./rank"
-import { buildLists, buildSnapshot } from "./snapshot"
+import { buildLists, buildSnapshot, type RankedPicks } from "./snapshot"
 
 function money(value: number | null): string {
   return value == null ? "n/a" : `$${value.toFixed(3)}`
@@ -164,19 +166,7 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
   const adoptionById = adoptionByCatalogId(adoption, index)
   const deepsec = deepsecByCatalogId(deepsecRows, index)
 
-  const scanIds = [
-    ...new Set([
-      ...catalog
-        .filter(
-          (model) =>
-            (model.zdr === "all" || model.zdr === "some") &&
-            (model.no_training === "all" || model.no_training === "some")
-        )
-        .map((model) => model.id),
-      ...deepsec.keys(),
-    ]),
-  ]
-  const quotes = await fetchEndpointQuotes(scanIds)
+  const quotes = await fetchEndpointQuotes(catalog.map((model) => model.id))
 
   const leaderboard = [...adoption.entries()]
     .map(([name, metrics]) =>
@@ -192,7 +182,7 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
 
   const zdrRanked = catalogRanked.filter(hasZdr)
   const privacyRanked = catalogRanked.filter(hasPrivacy)
-  const lists = buildLists(privacyRanked, leaderboard)
+  const privacyLeaderboard = leaderboard.filter(hasPrivacy)
   const unmatchedDeepsec = deepsecRows.filter(
     (row) => matchModelId(row.id, index) == null
   )
@@ -204,12 +194,13 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
     privacyModels: privacyRanked.length,
     deepsecRuns: deepsecRows.length,
     picks: {
-      bangForBuck: pickBangForBuck(privacyRanked),
-      workhorse: pickDefaultWorkhorse(leaderboard),
-      cheapRouter: pickCheapRouter(privacyRanked),
-      frontier: pickFrontier(leaderboard),
+      privacy: picksFrom(privacyRanked, privacyLeaderboard),
+      open: picksFrom(catalogRanked, leaderboard),
     },
-    lists,
+    lists: {
+      privacy: buildLists(privacyRanked, privacyLeaderboard),
+      open: buildLists(catalogRanked, leaderboard),
+    },
     labs,
     unmatched: {
       leaderboard: unmatched.map((model) => model.boardName),
@@ -237,21 +228,23 @@ async function writeSnapshot(snapshot: GatewaySnapshot): Promise<string[]> {
   return [latestPath, weekPath, historyPath]
 }
 
-function printReport(snapshot: GatewaySnapshot) {
-  const { window, stats, picks, lists, labs, unmatched, attribution } = snapshot
+function picksFrom(
+  ranked: RankedModel[],
+  leaderboard: RankedModel[]
+): RankedPicks {
+  return {
+    bangForBuck: pickBangForBuck(ranked),
+    workhorse: pickDefaultWorkhorse(leaderboard),
+    cheapRouter: pickCheapRouter(ranked),
+    frontier: pickFrontier(leaderboard),
+  }
+}
 
-  console.log(
-    `AI Gateway ZDR+NPT bang-for-buck  ·  ${window.from} → ${window.to}  ·  ${stats.languageModels} language models  ·  ${stats.privacyModels} ZDR+NPT`
-  )
-  console.log(attribution.text)
-  console.log(
-    `DeepsecBench ${stats.deepsecRuns} runs  ·  bang = score / run $  ·  floor score ≥ ${MIN_DEEPSEC_SCORE}`
-  )
-  console.log(
-    "ZDR+NPT = catalog all|some  ·  discount = cheaper ZDR endpoint than list"
-  )
-
-  console.log("\nPicks (ZDR + no-training)")
+function printLanePicks(
+  title: string,
+  picks: GatewaySnapshot["picks"]["privacy"]
+) {
+  console.log(`\nPicks (${title})`)
   console.log(
     `  BANG FOR BUCK  ${picks.bangForBuck ? picks.bangForBuck.id : "none"}`
   )
@@ -262,31 +255,61 @@ function printReport(snapshot: GatewaySnapshot) {
     `  CHEAP ROUTER   ${picks.cheapRouter ? picks.cheapRouter.id : "none"}`
   )
   console.log(`  FRONTIER       ${picks.frontier ? picks.frontier.id : "none"}`)
+}
 
+function laneListLabel(lane: SnapshotLaneKey): string {
+  switch (lane) {
+    case "privacy":
+      return "ZDR+NPT"
+    case "open":
+      return "all models"
+    default: {
+      const _exhaustive: never = lane
+      return _exhaustive
+    }
+  }
+}
+
+function printLaneLists(lane: SnapshotLaneKey, lists: SnapshotLists) {
+  const label = laneListLabel(lane)
   section(
-    "DeepsecBench bang-for-buck (ZDR+NPT, score ≥ floor)",
+    `DeepsecBench bang-for-buck (${label}, score ≥ floor)`,
     lists.deepsecBang.map(asRankedLine)
   )
   section(
-    "DeepsecBench highest score (ZDR+NPT)",
+    `DeepsecBench highest score (${label})`,
     lists.deepsecScore.map(asRankedLine)
   )
   section(
-    "Discounted ZDR+NPT (cheaper provider than list)",
+    `Discounted ${label} (cheaper provider than list)`,
     lists.discounted.map(asRankedLine)
   )
   section(
-    `Adopted cheap capable ZDR+NPT (blend ≤ $${CHEAP_BLEND_USD})`,
+    `Adopted cheap capable ${label} (blend ≤ $${CHEAP_BLEND_USD})`,
     lists.cheapCapable.map(asRankedLine)
   )
-  section(
-    "Top token share (ZDR+NPT adopted)",
-    lists.tokenShare.map(asRankedLine)
+  section(`Top token share (${label})`, lists.tokenShare.map(asRankedLine))
+  section(`Top spend share (${label})`, lists.spendShare.map(asRankedLine))
+}
+
+function printReport(snapshot: GatewaySnapshot) {
+  const { window, stats, picks, lists, labs, unmatched, attribution } = snapshot
+
+  console.log(
+    `AI Gateway bang-for-buck  ·  ${window.from} → ${window.to}  ·  ${stats.languageModels} language models  ·  ${stats.privacyModels} ZDR+NPT`
   )
-  section(
-    "Top spend share (ZDR+NPT adopted)",
-    lists.spendShare.map(asRankedLine)
+  console.log(attribution.text)
+  console.log(
+    `DeepsecBench ${stats.deepsecRuns} runs  ·  bang = score / run $  ·  floor score ≥ ${MIN_DEEPSEC_SCORE}`
   )
+  console.log(
+    "ZDR+NPT = catalog all|some  ·  discount = cheaper ZDR endpoint than list"
+  )
+
+  printLanePicks("ZDR + no-training", picks.privacy)
+  printLanePicks("all models", picks.open)
+  printLaneLists("privacy", lists.privacy)
+  printLaneLists("open", lists.open)
 
   console.log("\nTop labs (7-day token share)")
   for (const lab of labs) {
@@ -311,7 +334,7 @@ function printReport(snapshot: GatewaySnapshot) {
 }
 
 function asRankedLine(
-  model: GatewaySnapshot["lists"]["deepsecBang"][number]
+  model: SnapshotLists["deepsecBang"][number]
 ): RankedModel {
   return {
     id: model.id,

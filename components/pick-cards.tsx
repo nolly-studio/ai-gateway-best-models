@@ -4,7 +4,7 @@ import { CopyModelId, useCopyText } from "@/components/copy-model-id"
 import { Meter } from "@/components/meter"
 import { ProviderIcon } from "@/components/provider-icon"
 import { blendOf, money, pct, score } from "@/lib/format"
-import type { FeaturedPick } from "@/lib/picks"
+import { policyLabel, type FeaturedPick } from "@/lib/picks"
 
 function ExternalArrow() {
   return (
@@ -23,29 +23,49 @@ function ExternalArrow() {
   )
 }
 
-export function PickCards({ picks }: { picks: FeaturedPick[] }) {
+export function PickCards({
+  title,
+  hint,
+  picks,
+  showPolicy = false,
+}: {
+  title: string
+  hint?: string
+  picks: FeaturedPick[]
+  showPolicy?: boolean
+}) {
   return (
     <section className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 px-0.5">
-        <h2 className="text-[13px] font-semibold text-balance text-ink">
-          This week&apos;s picks
-        </h2>
-        <span className="inline-flex h-5 items-center rounded-md bg-inset px-1.5 text-[11.5px] font-medium text-ink-2 tabular-nums shadow-hairline">
-          {picks.length}
-        </span>
+      <div className="flex flex-col gap-0.5 px-0.5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[13px] font-semibold text-balance text-ink">
+            {title}
+          </h2>
+          <span className="inline-flex h-5 items-center rounded-md bg-inset px-1.5 text-[11.5px] font-medium text-ink-2 tabular-nums shadow-hairline">
+            {picks.length}
+          </span>
+        </div>
+        {hint ? <p className="text-[12px] text-ink-3">{hint}</p> : null}
       </div>
       {picks.map((pick) => (
-        <PickCard key={pick.model.id} pick={pick} />
+        <PickCard key={pick.model.id} pick={pick} showPolicy={showPolicy} />
       ))}
     </section>
   )
 }
 
-function PickCard({ pick }: { pick: FeaturedPick }) {
+function PickCard({
+  pick,
+  showPolicy,
+}: {
+  pick: FeaturedPick
+  showPolicy: boolean
+}) {
   const { model, roles } = pick
   const { status, copy } = useCopyText()
   const blend = blendOf(model)
   const why = [
+    showPolicy ? policyLabel(model) : null,
     model.deepsecScore != null ? `${score(model.deepsecScore)} Deepsec` : null,
     model.deepsecBang != null ? `${score(model.deepsecBang, 2)} bang` : null,
     model.tokensShare > 0 ? `${pct(model.tokensShare)} tokens` : null,

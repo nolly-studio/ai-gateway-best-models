@@ -1,11 +1,10 @@
-import { readFile } from "node:fs/promises"
-import { join } from "node:path"
-
-export const SNAPSHOT_SCHEMA_VERSION = 1
-export const HISTORY_SCHEMA_VERSION = 1
+export const SNAPSHOT_SCHEMA_VERSION = 2
+export const HISTORY_SCHEMA_VERSION = 2
 export const SNAPSHOT_RELATIVE_PATH = "public/data/gateway.json"
 export const HISTORY_RELATIVE_PATH = "public/data/history.json"
 export const WEEKS_RELATIVE_DIR = "public/data/weeks"
+
+export const SNAPSHOT_LANE_KEYS = ["privacy", "open"] as const
 
 export const SNAPSHOT_PICK_KEYS = [
   "bangForBuck",
@@ -20,6 +19,10 @@ export function weekSnapshotRelativePath(week: string): string {
 
 export function weekSnapshotPublicPath(week: string): string {
   return `/data/weeks/${week}.json`
+}
+
+export function weekPagePath(week: string): string {
+  return `/week/${week}`
 }
 
 export const CATALOG_URL = "https://ai-gateway.vercel.sh/v1/models"
@@ -75,6 +78,19 @@ export type SnapshotLab = {
 export type SnapshotPickKey =
   "bangForBuck" | "workhorse" | "cheapRouter" | "frontier"
 
+export type SnapshotLaneKey = (typeof SNAPSHOT_LANE_KEYS)[number]
+
+export type SnapshotPicks = Record<SnapshotPickKey, SnapshotModel | null>
+
+export type SnapshotLists = {
+  deepsecBang: SnapshotModel[]
+  deepsecScore: SnapshotModel[]
+  discounted: SnapshotModel[]
+  cheapCapable: SnapshotModel[]
+  tokenShare: SnapshotModel[]
+  spendShare: SnapshotModel[]
+}
+
 export type SnapshotAnalysis = {
   modelId: string
   headline: string
@@ -103,15 +119,8 @@ export type GatewaySnapshot = {
     privacyModels: number
     deepsecRuns: number
   }
-  picks: Record<SnapshotPickKey, SnapshotModel | null>
-  lists: {
-    deepsecBang: SnapshotModel[]
-    deepsecScore: SnapshotModel[]
-    discounted: SnapshotModel[]
-    cheapCapable: SnapshotModel[]
-    tokenShare: SnapshotModel[]
-    spendShare: SnapshotModel[]
-  }
+  picks: Record<SnapshotLaneKey, SnapshotPicks>
+  lists: Record<SnapshotLaneKey, SnapshotLists>
   labs: SnapshotLab[]
   unmatched: {
     leaderboard: string[]
@@ -127,14 +136,19 @@ export type HistoryPickMetrics = {
   valueScore: number | null
 }
 
+export type HistoryLanePicks = Record<SnapshotPickKey, string | null>
+export type HistoryLaneMetrics = Partial<
+  Record<SnapshotPickKey, HistoryPickMetrics>
+>
+
 export type HistoryWeek = {
   week: string
   from: string
   generatedAt: string
   href: string
   stats: GatewaySnapshot["stats"]
-  picks: Record<SnapshotPickKey, string | null>
-  pickMetrics: Partial<Record<SnapshotPickKey, HistoryPickMetrics>>
+  picks: Record<SnapshotLaneKey, HistoryLanePicks>
+  pickMetrics: Record<SnapshotLaneKey, HistoryLaneMetrics>
 }
 
 export type GatewayHistory = {
@@ -158,16 +172,31 @@ function toPickMetrics(model: SnapshotModel): HistoryPickMetrics {
   }
 }
 
-export function toHistoryWeek(snapshot: GatewaySnapshot): HistoryWeek {
-  const picks = {} as Record<SnapshotPickKey, string | null>
-  const pickMetrics: Partial<Record<SnapshotPickKey, HistoryPickMetrics>> = {}
+export function emptyHistoryLanePicks(): HistoryLanePicks {
+  return {
+    bangForBuck: null,
+    workhorse: null,
+    cheapRouter: null,
+    frontier: null,
+  }
+}
 
-  for (const key of SNAPSHOT_PICK_KEYS) {
-    const model = snapshot.picks[key]
-    picks[key] = model?.id ?? null
-    if (model) {
-      pickMetrics[key] = toPickMetrics(model)
+export function toHistoryWeek(snapshot: GatewaySnapshot): HistoryWeek {
+  const picks = {} as Record<SnapshotLaneKey, HistoryLanePicks>
+  const pickMetrics = {} as Record<SnapshotLaneKey, HistoryLaneMetrics>
+
+  for (const lane of SNAPSHOT_LANE_KEYS) {
+    const lanePicks = emptyHistoryLanePicks()
+    const laneMetrics: HistoryLaneMetrics = {}
+    for (const key of SNAPSHOT_PICK_KEYS) {
+      const model = snapshot.picks[lane][key]
+      lanePicks[key] = model?.id ?? null
+      if (model) {
+        laneMetrics[key] = toPickMetrics(model)
+      }
     }
+    picks[lane] = lanePicks
+    pickMetrics[lane] = laneMetrics
   }
 
   return {
@@ -193,32 +222,5 @@ export function upsertHistory(
   return {
     schemaVersion: HISTORY_SCHEMA_VERSION,
     weeks,
-  }
-}
-
-function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error
-}
-
-export async function readSnapshot(): Promise<GatewaySnapshot> {
-  const raw = await readFile(
-    join(process.cwd(), SNAPSHOT_RELATIVE_PATH),
-    "utf8"
-  )
-  return JSON.parse(raw) as GatewaySnapshot
-}
-
-export async function readHistory(): Promise<GatewayHistory> {
-  try {
-    const raw = await readFile(
-      join(process.cwd(), HISTORY_RELATIVE_PATH),
-      "utf8"
-    )
-    return JSON.parse(raw) as GatewayHistory
-  } catch (error) {
-    if (isErrnoException(error) && error.code === "ENOENT") {
-      return emptyHistory()
-    }
-    throw error
   }
 }

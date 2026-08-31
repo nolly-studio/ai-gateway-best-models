@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { SnapshotModel } from "./gateway-snapshot"
-import { groupPicks } from "./picks"
+import { groupPicks, laneHeading, laneTitle, policyLabel } from "./picks"
 
 function model(id: string, name: string): SnapshotModel {
   return {
@@ -50,5 +50,26 @@ describe("groupPicks", () => {
       "cheapRouter",
     ])
     expect(grouped[1]?.model.id).toBe(sol.id)
+  })
+
+  it("labels lanes and policy flags", () => {
+    expect(laneTitle("privacy")).toBe("ZDR + no training")
+    expect(laneTitle("open")).toBe("Best bang for buck")
+    expect(laneHeading("privacy")).toBe(
+      "Best ZDR + no-training models this week"
+    )
+    expect(laneHeading("open")).toBe(
+      "Best bang-for-buck models (including models that train)"
+    )
+    expect(policyLabel({ zdr: "some", noTraining: "all" })).toBe(
+      "ZDR + no training"
+    )
+    expect(policyLabel({ zdr: "some", noTraining: "none" })).toBe(
+      "ZDR · trains"
+    )
+    expect(policyLabel({ zdr: "none", noTraining: "all" })).toBe("No training")
+    expect(policyLabel({ zdr: "none", noTraining: "none" })).toBe(
+      "No ZDR · trains"
+    )
   })
 })

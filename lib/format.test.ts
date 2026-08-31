@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { formatWindow, money, pct } from "./format"
+import { formatDay, formatWindow, money, pct } from "./format"
 
 describe("format", () => {
   it("formats a same-month window", () => {
@@ -15,5 +15,15 @@ describe("format", () => {
     expect(money(0.113)).toBe("$0.113")
     expect(money(11.25)).toBe("$11.25")
     expect(pct(22.271)).toBe("22.3%")
+  })
+})
+
+describe("formatDay", () => {
+  it("formats a date-only UTC day", () => {
+    expect(formatDay("2026-08-31")).toBe("Aug 31, 2026")
+  })
+
+  it("formats an ISO timestamp in UTC", () => {
+    expect(formatDay("2026-08-31T20:58:47.079Z")).toBe("Aug 31, 2026")
   })
 })

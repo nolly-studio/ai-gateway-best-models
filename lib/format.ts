@@ -60,3 +60,17 @@ export function formatWindow(from: string, to: string): string {
 
   return `${startMonth} ${startDay}–${endMonth} ${endDay}, ${year}`
 }
+
+export function formatDay(isoDate: string): string {
+  const date = isoDate.includes("T")
+    ? new Date(isoDate)
+    : new Date(`${isoDate}T00:00:00Z`)
+  if (Number.isNaN(date.getTime())) {
+    return isoDate
+  }
+  const month = MONTHS[date.getUTCMonth()]
+  if (month == null) {
+    return isoDate
+  }
+  return `${month} ${date.getUTCDate()}, ${date.getUTCFullYear()}`
+}

@@ -48,9 +48,7 @@ function model(
   }
 }
 
-function snapshot(
-  overrides: Partial<GatewaySnapshot> = {}
-): GatewaySnapshot {
+function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
   const flash = model("deepseek/deepseek-v4-flash", {
     tokensShare: 22.27,
     zdrBlendedPerMillion: 0.1125,
@@ -80,23 +78,46 @@ function snapshot(
       deepsecRuns: 35,
     },
     picks: {
-      bangForBuck: flash,
-      workhorse: flash,
-      cheapRouter: flash,
-      frontier: model("openai/gpt-5.6-sol", {
-        tokensShare: 0,
-        zdrBlendedPerMillion: 11.25,
-        deepsecBang: 1.4,
-        valueScore: null,
-      }),
+      privacy: {
+        bangForBuck: flash,
+        workhorse: flash,
+        cheapRouter: flash,
+        frontier: model("openai/gpt-5.6-sol", {
+          tokensShare: 0,
+          zdrBlendedPerMillion: 11.25,
+          deepsecBang: 1.4,
+          valueScore: null,
+        }),
+      },
+      open: {
+        bangForBuck: flash,
+        workhorse: flash,
+        cheapRouter: flash,
+        frontier: model("openai/gpt-5.6-sol", {
+          tokensShare: 0,
+          zdrBlendedPerMillion: 11.25,
+          deepsecBang: 1.4,
+          valueScore: null,
+        }),
+      },
     },
     lists: {
-      deepsecBang: [],
-      deepsecScore: [],
-      discounted: [],
-      cheapCapable: [],
-      tokenShare: [],
-      spendShare: [],
+      privacy: {
+        deepsecBang: [],
+        deepsecScore: [],
+        discounted: [],
+        cheapCapable: [],
+        tokenShare: [],
+        spendShare: [],
+      },
+      open: {
+        deepsecBang: [],
+        deepsecScore: [],
+        discounted: [],
+        cheapCapable: [],
+        tokenShare: [],
+        spendShare: [],
+      },
     },
     labs: [],
     unmatched: { leaderboard: [], deepsec: [] },
@@ -114,36 +135,45 @@ describe("toHistoryWeek", () => {
     expect(week.generatedAt).toBe("2026-08-31T19:00:00.000Z")
     expect(week.href).toBe(weekSnapshotPublicPath("2026-08-31"))
     expect(week.stats.privacyModels).toBe(176)
-    expect(week.picks).toEqual({
+    expect(week.picks.privacy).toEqual({
       bangForBuck: "deepseek/deepseek-v4-flash",
       workhorse: "deepseek/deepseek-v4-flash",
       cheapRouter: "deepseek/deepseek-v4-flash",
       frontier: "openai/gpt-5.6-sol",
     })
-    expect(week.pickMetrics.bangForBuck).toEqual({
+    expect(week.picks.open.bangForBuck).toBe("deepseek/deepseek-v4-flash")
+    expect(week.pickMetrics.privacy.bangForBuck).toEqual({
       tokensShare: 22.27,
       zdrBlendedPerMillion: 0.1125,
       deepsecBang: 3.06,
       valueScore: 197.97,
     })
-    expect(week.pickMetrics.frontier?.valueScore).toBeNull()
+    expect(week.pickMetrics.privacy.frontier?.valueScore).toBeNull()
   })
 
   it("omits metrics for a missing pick", () => {
     const week = toHistoryWeek(
       snapshot({
         picks: {
-          bangForBuck: model("deepseek/deepseek-v4-flash"),
-          workhorse: null,
-          cheapRouter: null,
-          frontier: null,
+          privacy: {
+            bangForBuck: model("deepseek/deepseek-v4-flash"),
+            workhorse: null,
+            cheapRouter: null,
+            frontier: null,
+          },
+          open: {
+            bangForBuck: model("deepseek/deepseek-v4-flash"),
+            workhorse: null,
+            cheapRouter: null,
+            frontier: null,
+          },
         },
       })
     )
 
-    expect(week.picks.workhorse).toBeNull()
-    expect(week.pickMetrics.workhorse).toBeUndefined()
-    expect(week.pickMetrics.bangForBuck).toBeDefined()
+    expect(week.picks.privacy.workhorse).toBeNull()
+    expect(week.pickMetrics.privacy.workhorse).toBeUndefined()
+    expect(week.pickMetrics.privacy.bangForBuck).toBeDefined()
   })
 })
 
@@ -172,10 +202,18 @@ describe("upsertHistory", () => {
       snapshot({
         generatedAt: "2026-08-31T21:00:00.000Z",
         picks: {
-          bangForBuck: model("alibaba/qwen3.8-max"),
-          workhorse: model("deepseek/deepseek-v4-flash"),
-          cheapRouter: model("deepseek/deepseek-v4-flash"),
-          frontier: model("openai/gpt-5.6-sol"),
+          privacy: {
+            bangForBuck: model("alibaba/qwen3.8-max"),
+            workhorse: model("deepseek/deepseek-v4-flash"),
+            cheapRouter: model("deepseek/deepseek-v4-flash"),
+            frontier: model("openai/gpt-5.6-sol"),
+          },
+          open: {
+            bangForBuck: model("alibaba/qwen3.8-max"),
+            workhorse: model("deepseek/deepseek-v4-flash"),
+            cheapRouter: model("deepseek/deepseek-v4-flash"),
+            frontier: model("openai/gpt-5.6-sol"),
+          },
         },
       })
     )
@@ -184,6 +222,8 @@ describe("upsertHistory", () => {
 
     expect(history.weeks).toHaveLength(1)
     expect(history.weeks[0]?.generatedAt).toBe("2026-08-31T21:00:00.000Z")
-    expect(history.weeks[0]?.picks.bangForBuck).toBe("alibaba/qwen3.8-max")
+    expect(history.weeks[0]?.picks.privacy.bangForBuck).toBe(
+      "alibaba/qwen3.8-max"
+    )
   })
 })

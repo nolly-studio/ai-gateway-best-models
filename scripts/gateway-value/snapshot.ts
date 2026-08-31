@@ -9,7 +9,9 @@ import {
   SNAPSHOT_SCHEMA_VERSION,
   type GatewaySnapshot,
   type SnapshotLab,
+  type SnapshotLists,
   type SnapshotModel,
+  type SnapshotPicks,
   type SnapshotZdr,
 } from "../../lib/gateway-snapshot"
 import {
@@ -20,7 +22,6 @@ import {
   byTokenShare,
   CHEAP_BLEND_USD,
   hasAdoption,
-  hasPrivacy,
   isCapable,
   LOOKBACK_DAYS,
   MIN_DEEPSEC_SCORE,
@@ -28,6 +29,13 @@ import {
   type RankedModel,
   type ZdrLevel,
 } from "./rank"
+
+export type RankedPicks = {
+  bangForBuck: RankedModel | null
+  workhorse: RankedModel | null
+  cheapRouter: RankedModel | null
+  frontier: RankedModel | null
+}
 
 export type RankedLists = {
   deepsecBang: RankedModel[]
@@ -46,12 +54,13 @@ export type SnapshotInput = {
   privacyModels: number
   deepsecRuns: number
   picks: {
-    bangForBuck: RankedModel | null
-    workhorse: RankedModel | null
-    cheapRouter: RankedModel | null
-    frontier: RankedModel | null
+    privacy: RankedPicks
+    open: RankedPicks
   }
-  lists: RankedLists
+  lists: {
+    privacy: RankedLists
+    open: RankedLists
+  }
   labs: Map<string, Adoption>
   unmatched: {
     leaderboard: string[]
@@ -162,14 +171,28 @@ export function buildLists(
             right.blendedPerMillion ??
             Number.POSITIVE_INFINITY)
       ),
-    tokenShare: leaderboard
-      .filter(hasPrivacy)
-      .toSorted(byTokenShare)
-      .slice(0, 8),
-    spendShare: leaderboard
-      .filter(hasPrivacy)
-      .toSorted(bySpendShare)
-      .slice(0, 8),
+    tokenShare: leaderboard.toSorted(byTokenShare).slice(0, 8),
+    spendShare: leaderboard.toSorted(bySpendShare).slice(0, 8),
+  }
+}
+
+export function toSnapshotPicks(picks: RankedPicks): SnapshotPicks {
+  return {
+    bangForBuck: picks.bangForBuck ? toSnapshotModel(picks.bangForBuck) : null,
+    workhorse: picks.workhorse ? toSnapshotModel(picks.workhorse) : null,
+    cheapRouter: picks.cheapRouter ? toSnapshotModel(picks.cheapRouter) : null,
+    frontier: picks.frontier ? toSnapshotModel(picks.frontier) : null,
+  }
+}
+
+export function toSnapshotLists(lists: RankedLists): SnapshotLists {
+  return {
+    deepsecBang: lists.deepsecBang.map(toSnapshotModel),
+    deepsecScore: lists.deepsecScore.map(toSnapshotModel),
+    discounted: lists.discounted.map(toSnapshotModel),
+    cheapCapable: lists.cheapCapable.map(toSnapshotModel),
+    tokenShare: lists.tokenShare.map(toSnapshotModel),
+    spendShare: lists.spendShare.map(toSnapshotModel),
   }
 }
 
@@ -200,26 +223,12 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
       deepsecRuns: input.deepsecRuns,
     },
     picks: {
-      bangForBuck: input.picks.bangForBuck
-        ? toSnapshotModel(input.picks.bangForBuck)
-        : null,
-      workhorse: input.picks.workhorse
-        ? toSnapshotModel(input.picks.workhorse)
-        : null,
-      cheapRouter: input.picks.cheapRouter
-        ? toSnapshotModel(input.picks.cheapRouter)
-        : null,
-      frontier: input.picks.frontier
-        ? toSnapshotModel(input.picks.frontier)
-        : null,
+      privacy: toSnapshotPicks(input.picks.privacy),
+      open: toSnapshotPicks(input.picks.open),
     },
     lists: {
-      deepsecBang: input.lists.deepsecBang.map(toSnapshotModel),
-      deepsecScore: input.lists.deepsecScore.map(toSnapshotModel),
-      discounted: input.lists.discounted.map(toSnapshotModel),
-      cheapCapable: input.lists.cheapCapable.map(toSnapshotModel),
-      tokenShare: input.lists.tokenShare.map(toSnapshotModel),
-      spendShare: input.lists.spendShare.map(toSnapshotModel),
+      privacy: toSnapshotLists(input.lists.privacy),
+      open: toSnapshotLists(input.lists.open),
     },
     labs: toSnapshotLabs(input.labs),
     unmatched: input.unmatched,

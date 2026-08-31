@@ -5,7 +5,12 @@ import { useState } from "react"
 import { CopyModelId } from "@/components/copy-model-id"
 import { ProviderIcon } from "@/components/provider-icon"
 import { blendOf, money, pct, score } from "@/lib/format"
-import type { GatewaySnapshot, SnapshotModel } from "@/lib/gateway-snapshot"
+import type {
+  GatewaySnapshot,
+  SnapshotLaneKey,
+  SnapshotModel,
+} from "@/lib/gateway-snapshot"
+import { laneTitle, policyLabel } from "@/lib/picks"
 import { cn } from "@/lib/utils"
 
 type LedgerKey =
@@ -26,28 +31,55 @@ const FILTERS: { key: LedgerKey; label: string; share: "tokens" | "spend" }[] =
     { key: "spendShare", label: "Spend", share: "spend" },
   ]
 
+const LANES: { key: SnapshotLaneKey; label: string }[] = [
+  { key: "privacy", label: "ZDR+NPT" },
+  { key: "open", label: "All" },
+]
+
 const MAX_ROWS = 12
 const LEDGER_GRID =
   "grid grid-cols-[minmax(0,1.6fr)_4.5rem_4.25rem] sm:grid-cols-[1.7fr_0.6fr_0.5fr_0.5fr_0.55fr]"
 
 export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
+  const [lane, setLane] = useState<SnapshotLaneKey>("privacy")
   const [filter, setFilter] = useState<LedgerKey>("deepsecBang")
   const active =
     FILTERS.find((item) => item.key === filter) ??
     FILTERS[0] ??
     ({ key: "deepsecBang", label: "Bang", share: "tokens" } as const)
-  const rows = lists[filter].slice(0, MAX_ROWS)
+  const laneLists = lists[lane]
+  const rows = laneLists[filter].slice(0, MAX_ROWS)
+  const showPolicy = lane === "open"
 
   return (
     <section className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-3 px-0.5">
         <h2 className="text-[13px] font-semibold text-balance text-ink">
-          Ledger
+          Ranked AI Gateway models
         </h2>
-        <span className="text-[12px] text-ink-3">
-          ZDR + no-training, ranked
-        </span>
+        <div className="flex items-center gap-1">
+          {LANES.map((item) => {
+            const selected = lane === item.key
+            return (
+              <button
+                aria-pressed={selected}
+                className={cn(
+                  "flex h-6.5 items-center rounded-full px-2.5 text-[12px] font-medium transition-[background-color,box-shadow,color] duration-200 focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+                  selected
+                    ? "bg-surface text-ink shadow-btn"
+                    : "text-ink-2 hover:bg-hover"
+                )}
+                key={item.key}
+                onClick={() => setLane(item.key)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
       </div>
+      <p className="px-0.5 text-[12px] text-ink-3">{laneTitle(lane)}, ranked</p>
 
       <div
         className="-mx-1 mb-1 flex items-center gap-1 overflow-x-auto px-1 py-1"
@@ -81,7 +113,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
                   selected ? "bg-field text-ink-2" : "text-ink-3"
                 )}
               >
-                {Math.min(lists[item.key].length, MAX_ROWS)}
+                {Math.min(laneLists[item.key].length, MAX_ROWS)}
               </span>
             </button>
           )
@@ -114,9 +146,10 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
           ) : (
             rows.map((model) => (
               <LedgerRow
-                key={`${filter}-${model.id}`}
+                key={`${lane}-${filter}-${model.id}`}
                 model={model}
                 share={active.share}
+                showPolicy={showPolicy}
               />
             ))
           )}
@@ -129,9 +162,11 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
 function LedgerRow({
   model,
   share,
+  showPolicy,
 }: {
   model: SnapshotModel
   share: "tokens" | "spend"
+  showPolicy: boolean
 }) {
   const blend = blendOf(model)
   const shareValue = share === "spend" ? model.spendShare : model.tokensShare
@@ -156,6 +191,11 @@ function LedgerRow({
           </a>
           <span className="flex min-w-0 items-center gap-1">
             <CopyModelId id={model.id} variant="inline" />
+            {showPolicy ? (
+              <span className="shrink-0 text-[11px] text-ink-3">
+                · {policyLabel(model)}
+              </span>
+            ) : null}
             {model.discountPercent != null ? (
               <span className="shrink-0 text-[11px] text-ink-3">
                 · {Math.round(model.discountPercent)}% off

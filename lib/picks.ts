@@ -1,5 +1,6 @@
 import {
   SNAPSHOT_PICK_KEYS,
+  type SnapshotLaneKey,
   type SnapshotModel,
   type SnapshotPickKey,
 } from "@/lib/gateway-snapshot"
@@ -29,6 +30,49 @@ export function pickLabel(key: SnapshotPickKey): string {
       return _exhaustive
     }
   }
+}
+
+export function laneTitle(lane: SnapshotLaneKey): string {
+  switch (lane) {
+    case "privacy":
+      return "ZDR + no training"
+    case "open":
+      return "Best bang for buck"
+    default: {
+      const _exhaustive: never = lane
+      return _exhaustive
+    }
+  }
+}
+
+export function laneHeading(lane: SnapshotLaneKey): string {
+  switch (lane) {
+    case "privacy":
+      return "Best ZDR + no-training models this week"
+    case "open":
+      return "Best bang-for-buck models (including models that train)"
+    default: {
+      const _exhaustive: never = lane
+      return _exhaustive
+    }
+  }
+}
+
+export function policyLabel(
+  model: Pick<SnapshotModel, "zdr" | "noTraining">
+): string {
+  const zdr = model.zdr === "all" || model.zdr === "some"
+  const noTraining = model.noTraining === "all" || model.noTraining === "some"
+  if (zdr && noTraining) {
+    return "ZDR + no training"
+  }
+  if (zdr) {
+    return "ZDR · trains"
+  }
+  if (noTraining) {
+    return "No training"
+  }
+  return "No ZDR · trains"
 }
 
 export function groupPicks(

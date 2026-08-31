@@ -1,78 +1,114 @@
+import type { Metadata } from "next"
+
+import { FaqList } from "@/components/faq-list"
+import { JsonLd } from "@/components/json-ld"
 import { LabsReadout } from "@/components/labs-readout"
 import { ModelLedger } from "@/components/model-ledger"
+import { PageFrame, SiteNav } from "@/components/page-frame"
 import { PickCards } from "@/components/pick-cards"
+import { SiteFooter } from "@/components/site-footer"
+import { TextLink } from "@/components/text-link"
 import { formatWindow } from "@/lib/format"
-import { readSnapshot } from "@/lib/gateway-snapshot"
-import { groupPicks } from "@/lib/picks"
+import { weekPagePath } from "@/lib/gateway-snapshot"
+import { groupPicks, laneHeading } from "@/lib/picks"
+import { readHistory, readSnapshot } from "@/lib/read-snapshot"
+import {
+  homeDescription,
+  homeJsonLd,
+  homeLead,
+  homeTitle,
+  siteFaqs,
+  updatedLabel,
+} from "@/lib/seo"
 
-export async function generateMetadata() {
+export async function generateMetadata(): Promise<Metadata> {
   const snapshot = await readSnapshot()
-  const window = formatWindow(snapshot.window.from, snapshot.window.to)
+  const title = homeTitle()
+  const description = homeDescription(snapshot)
+
   return {
-    title: "Best AI Gateway models",
-    description: `Weekly ZDR and no-training picks from Vercel AI Gateway for ${window}.`,
+    title: { absolute: title },
+    description,
+    alternates: { canonical: "/" },
+    openGraph: {
+      title,
+      description,
+      url: "/",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
   }
 }
 
 export default async function Page() {
-  const snapshot = await readSnapshot()
-  const picks = groupPicks(snapshot.picks)
+  const [snapshot, history] = await Promise.all([
+    readSnapshot(),
+    readHistory(),
+  ])
+  const privacyPicks = groupPicks(snapshot.picks.privacy)
+  const openPicks = groupPicks(snapshot.picks.open)
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
+  const archives = [...history.weeks].toReversed()
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[640px] flex-col gap-8 px-5 py-10">
+    <PageFrame>
+      <JsonLd data={homeJsonLd(snapshot)} />
       <header className="flex flex-col gap-2">
-        <p className="font-mono text-[11.5px] text-ink-3">
-          {window} · {snapshot.stats.languageModels} models ·{" "}
-          {snapshot.stats.privacyModels} ZDR+NPT
-        </p>
-        <h1 className="text-[22px] leading-tight font-semibold text-balance text-ink">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-mono text-[11.5px] text-ink-3">
+            {updatedLabel(snapshot)} · {window} · {snapshot.stats.languageModels}{" "}
+            models · {snapshot.stats.privacyModels} ZDR+NPT
+          </p>
+          <SiteNav />
+        </div>
+        <h1 className="font-pixel-square text-[22px] leading-tight font-semibold text-balance text-ink">
           Best models on AI Gateway
         </h1>
         <p className="max-w-prose text-[13.5px] leading-relaxed text-pretty text-ink-2">
-          Weekly picks that keep zero data retention and no training on prompts,
-          ranked from live catalog, adoption, discounts, and DeepsecBench.
+          {homeLead(snapshot)} Independent ranking from live catalog, 7-day
+          adoption, discounts, and DeepsecBench.
         </p>
       </header>
 
-      <PickCards picks={picks} />
+      <PickCards
+        hint="Zero data retention and no training on prompts"
+        picks={privacyPicks}
+        title={laneHeading("privacy")}
+      />
+      <PickCards
+        hint="Includes models that train or skip ZDR"
+        picks={openPicks}
+        showPolicy
+        title={laneHeading("open")}
+      />
       <ModelLedger lists={snapshot.lists} />
       <LabsReadout labs={snapshot.labs} />
+      <FaqList faqs={siteFaqs(snapshot)} />
 
-      <footer className="flex flex-col gap-2 border-t border-line pt-4 text-[12px] leading-relaxed text-ink-3">
-        <p className="text-pretty">
-          {snapshot.attribution.text}{" "}
-          <a
-            className="underline decoration-transparent underline-offset-2 transition-colors duration-100 hover:text-ink-2 hover:decoration-current"
-            href={snapshot.attribution.licenseUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            License
-          </a>
-          {" · "}
-          <a
-            className="underline decoration-transparent underline-offset-2 transition-colors duration-100 hover:text-ink-2 hover:decoration-current"
-            href="/data/gateway.json"
-          >
-            JSON
-          </a>
-          {" · "}
-          <a
-            className="underline decoration-transparent underline-offset-2 transition-colors duration-100 hover:text-ink-2 hover:decoration-current"
-            href="/data/history.json"
-          >
-            History
-          </a>
-        </p>
-        <p className="font-mono text-[11px]">
-          Press{" "}
-          <kbd className="rounded-[4px] bg-inset px-1 py-px shadow-hairline">
-            d
-          </kbd>{" "}
-          to toggle dark mode
-        </p>
-      </footer>
-    </main>
+      {archives.length > 0 ? (
+        <section className="flex flex-col gap-1.5">
+          <h2 className="text-[13px] font-semibold text-ink">Weekly archives</h2>
+          <p className="text-[13px] leading-relaxed text-pretty text-ink-2">
+            {archives.map((week, index) => (
+              <span key={week.week}>
+                {index > 0 ? " · " : null}
+                <TextLink href={weekPagePath(week.week)}>
+                  {formatWindow(week.from, week.week)}
+                </TextLink>
+              </span>
+            ))}
+          </p>
+        </section>
+      ) : null}
+
+      <SiteFooter
+        attribution={snapshot.attribution}
+        week={snapshot.window.to}
+      />
+    </PageFrame>
   )
 }

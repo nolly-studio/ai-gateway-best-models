@@ -178,13 +178,15 @@ describe("gateway-value rank", () => {
     expect(hasZdr(ranked(noZdrModel, {}))).toBe(false)
   })
 
-  it("requires ZDR and no-training for privacy picks", () => {
+  it("marks ZDR + no-training as privacy, but pickers rank any given pool", () => {
+    const trains = ranked(trainsOnPrompts, { tokens: 8 })
     expect(hasNoTraining(ranked(capableModel, {}))).toBe(true)
     expect(hasPrivacy(ranked(capableModel, {}))).toBe(true)
-    expect(hasZdr(ranked(trainsOnPrompts, {}))).toBe(true)
-    expect(hasNoTraining(ranked(trainsOnPrompts, {}))).toBe(false)
-    expect(hasPrivacy(ranked(trainsOnPrompts, {}))).toBe(false)
-    expect(pickCheapRouter([ranked(trainsOnPrompts, { tokens: 8 })])).toBeNull()
+    expect(hasZdr(trains)).toBe(true)
+    expect(hasNoTraining(trains)).toBe(false)
+    expect(hasPrivacy(trains)).toBe(false)
+    expect(pickCheapRouter([trains])?.id).toBe(trainsOnPrompts.id)
+    expect(pickCheapRouter([trains].filter(hasPrivacy))).toBeNull()
   })
 
   it("aliases DeepsecBench xai ids onto the catalog", () => {
@@ -239,6 +241,48 @@ describe("gateway-value rank", () => {
       capableModel.id
     )
     expect(pickFrontier([cheap, expensive])?.id).toBe(expensiveModel.id)
+  })
+
+  it("lets the open pool pick a no-ZDR model with better bang", () => {
+    const privacy = attachDeepsec(ranked(capableModel, {}), [
+      {
+        rank: 18,
+        name: "DeepSeek V4 Flash",
+        effort: "medium",
+        id: capableModel.id,
+        score: 15.48,
+        recall: 13,
+        precision: 66.7,
+        issues: 30,
+        total: 231,
+        falsePositives: 16,
+        costUsd: 5.06,
+        time: "1h 21m",
+        tokens: "1.4M",
+        harness: "pi",
+      },
+    ])
+    const openWinner = attachDeepsec(ranked(noZdrModel, {}), [
+      {
+        rank: 4,
+        name: "Grok 4.5",
+        effort: "high",
+        id: noZdrModel.id,
+        score: 20,
+        recall: 18,
+        precision: 80,
+        issues: 40,
+        total: 231,
+        falsePositives: 8,
+        costUsd: 2,
+        time: "40m",
+        tokens: "800K",
+        harness: "pi",
+      },
+    ])
+
+    expect(pickBangForBuck([privacy])?.id).toBe(capableModel.id)
+    expect(pickBangForBuck([privacy, openWinner])?.id).toBe(noZdrModel.id)
   })
 
   it("flags a cheaper ZDR endpoint as a discount", () => {
@@ -346,12 +390,23 @@ describe("gateway-value snapshot", () => {
       privacyModels: 72,
       deepsecRuns: 35,
       picks: {
-        bangForBuck: cheap,
-        workhorse: cheap,
-        cheapRouter: cheap,
-        frontier: null,
+        privacy: {
+          bangForBuck: cheap,
+          workhorse: cheap,
+          cheapRouter: cheap,
+          frontier: null,
+        },
+        open: {
+          bangForBuck: cheap,
+          workhorse: cheap,
+          cheapRouter: cheap,
+          frontier: null,
+        },
       },
-      lists,
+      lists: {
+        privacy: lists,
+        open: lists,
+      },
       labs: new Map([
         ["deepseek", { requests: 20, tokens: 28, spend: 2 }],
         ["anthropic", { requests: 18, tokens: 32, spend: 64 }],
@@ -360,11 +415,11 @@ describe("gateway-value snapshot", () => {
     })
 
     expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
-    expect(snapshot.picks.bangForBuck?.id).toBe(capableModel.id)
-    expect(snapshot.picks.bangForBuck?.noTraining).toBe("some")
+    expect(snapshot.picks.privacy.bangForBuck?.id).toBe(capableModel.id)
+    expect(snapshot.picks.privacy.bangForBuck?.noTraining).toBe("some")
     expect(snapshot.stats.privacyModels).toBe(72)
-    expect(snapshot.picks.bangForBuck?.href).toContain("deepseek-v4-flash")
-    expect(snapshot.picks.frontier).toBeNull()
+    expect(snapshot.picks.open.bangForBuck?.href).toContain("deepseek-v4-flash")
+    expect(snapshot.picks.privacy.frontier).toBeNull()
     expect(snapshot.analysis).toBeNull()
     expect(snapshot.labs[0]?.name).toBe("anthropic")
     expect(snapshot.unmatched.leaderboard).toEqual(["Mystery"])
