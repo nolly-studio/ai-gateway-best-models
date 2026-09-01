@@ -14,6 +14,8 @@ import {
   laneTitle,
   ledgerBangMetric,
   ledgerBlendMetric,
+  ledgerCodingMetric,
+  ledgerIntelMetric,
   ledgerScoreMetric,
   policyLabel,
   type LedgerMetric,
@@ -21,6 +23,8 @@ import {
 import { cn } from "@/lib/utils"
 
 type LedgerKey =
+  | "aaIntelligence"
+  | "aaCoding"
   | "deepsecBang"
   | "deepsecScore"
   | "discounted"
@@ -31,8 +35,10 @@ type LedgerKey =
 type LedgerShare = "tokens" | "spend"
 
 const FILTERS: { key: LedgerKey; label: string; share?: LedgerShare }[] = [
+  { key: "aaIntelligence", label: "Intel" },
+  { key: "aaCoding", label: "Coding" },
   { key: "deepsecBang", label: "Bang" },
-  { key: "deepsecScore", label: "Score" },
+  { key: "deepsecScore", label: "Deepsec" },
   { key: "discounted", label: "On sale" },
   { key: "cheapCapable", label: "Cheap" },
   { key: "tokenShare", label: "Tokens", share: "tokens" },
@@ -44,7 +50,7 @@ const LANES: { key: SnapshotLaneKey; label: string }[] = [
   { key: "open", label: "All" },
 ]
 
-const MAX_ROWS = 12
+const MAX_ROWS = 20
 
 function ledgerGrid(showShare: boolean): string {
   return showShare
@@ -52,13 +58,53 @@ function ledgerGrid(showShare: boolean): string {
     : "grid grid-cols-[minmax(0,1.6fr)_4.75rem] sm:grid-cols-[minmax(0,1.7fr)_5.5rem_4.75rem_4.75rem]"
 }
 
+function scoreColumnLabel(filter: LedgerKey): string {
+  switch (filter) {
+    case "aaIntelligence":
+      return "Intel"
+    case "aaCoding":
+      return "Coding"
+    case "deepsecBang":
+    case "deepsecScore":
+    case "discounted":
+    case "cheapCapable":
+    case "tokenShare":
+    case "spendShare":
+      return "Score"
+    default: {
+      const _exhaustive: never = filter
+      return _exhaustive
+    }
+  }
+}
+
+function scoreMetric(model: SnapshotModel, filter: LedgerKey): LedgerMetric {
+  switch (filter) {
+    case "aaIntelligence":
+      return ledgerIntelMetric(model)
+    case "aaCoding":
+      return ledgerCodingMetric(model)
+    case "deepsecBang":
+    case "deepsecScore":
+    case "discounted":
+    case "cheapCapable":
+    case "tokenShare":
+    case "spendShare":
+      return ledgerScoreMetric(model)
+    default: {
+      const _exhaustive: never = filter
+      return _exhaustive
+    }
+  }
+}
+
 export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
   const [lane, setLane] = useState<SnapshotLaneKey>("privacy")
-  const [filter, setFilter] = useState<LedgerKey>("deepsecBang")
+  const [filter, setFilter] = useState<LedgerKey>("aaIntelligence")
   const active =
     FILTERS.find((item) => item.key === filter) ??
     FILTERS[0] ??
-    ({ key: "deepsecBang", label: "Bang" } as const)
+    ({ key: "aaIntelligence", label: "Intel" } as const)
   const laneLists = lists[lane]
   const rows = laneLists[filter].slice(0, MAX_ROWS)
   const showPolicy = lane === "open"
@@ -94,7 +140,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
           })}
         </div>
       </div>
-      <p className="px-0.5 text-[12px] text-ink-3">{laneTitle(lane)}, ranked</p>
+      <p className="px-0.5 text-[12px] text-ink-3">{laneTitle(lane)}, top 20</p>
 
       <div
         className="-mx-1 mb-1 flex items-center gap-1 overflow-x-auto px-1 py-1"
@@ -148,7 +194,9 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
           >
             <span>Model</span>
             <span className="text-right">Blend</span>
-            <span className="hidden text-right sm:block">Score</span>
+            <span className="hidden text-right sm:block">
+              {scoreColumnLabel(filter)}
+            </span>
             <span className="hidden text-right sm:block">Bang</span>
             {showShare ? (
               <span className="text-right">
@@ -163,6 +211,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
           ) : (
             rows.map((model) => (
               <LedgerRow
+                filter={filter}
                 key={`${lane}-${filter}-${model.id}`}
                 model={model}
                 share={share}
@@ -178,18 +227,20 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
 }
 
 function LedgerRow({
+  filter,
   model,
   share,
   showPolicy,
   showShare,
 }: {
+  filter: LedgerKey
   model: SnapshotModel
   share: LedgerShare | undefined
   showPolicy: boolean
   showShare: boolean
 }) {
   const blend = ledgerBlendMetric(model)
-  const score = ledgerScoreMetric(model)
+  const quality = scoreMetric(model, filter)
   const bang = ledgerBangMetric(model)
   const shareValue = share === "spend" ? model.spendShare : model.tokensShare
 
@@ -227,7 +278,7 @@ function LedgerRow({
         </span>
       </span>
       <MetricCell metric={blend} />
-      <MetricCell className="hidden sm:block" metric={score} />
+      <MetricCell className="hidden sm:block" metric={quality} />
       <MetricCell className="hidden sm:block" metric={bang} />
       {showShare ? (
         <span className="text-right text-ink-2 tabular-nums">

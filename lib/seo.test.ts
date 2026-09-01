@@ -89,6 +89,8 @@ function snapshot(): GatewaySnapshot {
     },
     lists: {
       privacy: {
+        aaIntelligence: [],
+        aaCoding: [],
         deepsecBang: [],
         deepsecScore: [],
         discounted: [],
@@ -97,6 +99,8 @@ function snapshot(): GatewaySnapshot {
         spendShare: [],
       },
       open: {
+        aaIntelligence: [],
+        aaCoding: [],
         deepsecBang: [],
         deepsecScore: [],
         discounted: [],

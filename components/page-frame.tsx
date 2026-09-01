@@ -42,7 +42,7 @@ export function PageHeader({
   children: ReactNode;
   current: "picks" | "methodology";
   meta: ReactNode;
-  title: string;
+  title: ReactNode;
 }) {
   return (
     <header className="flex flex-col">

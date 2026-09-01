@@ -1,4 +1,5 @@
 import {
+  AA_API_URL,
   AA_BENCHMARKS_URL,
   AA_MODELS_URL,
   CATALOG_URL,
@@ -14,6 +15,7 @@ import {
   perMillion,
   toNumber,
   type AaIndices,
+  type AaRecord,
   type DeepsecRow,
   type EndpointQuote,
   type GatewayModel,
@@ -549,6 +551,82 @@ function setAa(
   byId.set(id, indices)
 }
 
+const AA_MAX_PAGES = 8
+
+type AaFreeCreator = {
+  name?: string | null
+}
+
+type AaFreeEvaluations = {
+  artificial_analysis_intelligence_index?: number | null
+  artificial_analysis_coding_index?: number | null
+  artificial_analysis_agentic_index?: number | null
+}
+
+export type AaFreeModelItem = {
+  slug?: string
+  name?: string
+  model_creator?: AaFreeCreator | null
+  evaluations?: AaFreeEvaluations
+}
+
+type AaFreePagination = {
+  page?: number
+  page_size?: number
+  total_pages?: number
+  has_more?: boolean
+}
+
+export type AaFreeResponse = {
+  data?: AaFreeModelItem[]
+  pagination?: AaFreePagination
+}
+
+export function parseAaFreeModels(body: AaFreeResponse): AaRecord[] {
+  const records: AaRecord[] = []
+  for (const item of body.data ?? []) {
+    const slug = item.slug?.trim()
+    if (slug == null || slug === "") {
+      continue
+    }
+    const indices: AaIndices = {
+      intelligence: finiteOrNull(
+        item.evaluations?.artificial_analysis_intelligence_index
+      ),
+      coding: finiteOrNull(item.evaluations?.artificial_analysis_coding_index),
+      agentic: finiteOrNull(item.evaluations?.artificial_analysis_agentic_index),
+    }
+    if (!hasAaIndex(indices)) {
+      continue
+    }
+    const name = item.name?.trim()
+    const creator = item.model_creator?.name?.trim()
+    records.push({
+      slug,
+      name: name == null || name === "" ? slug : name,
+      creator: creator == null || creator === "" ? null : creator,
+      indices,
+      source: "aa",
+    })
+  }
+  return records
+}
+
+function recordsFromIdMap(byId: Map<string, AaIndices>): AaRecord[] {
+  const records: AaRecord[] = []
+  for (const [id, indices] of byId) {
+    const slash = id.indexOf("/")
+    records.push({
+      slug: slash >= 0 ? (id.slice(slash + 1) || id) : id,
+      name: id,
+      creator: slash > 0 ? id.slice(0, slash) : null,
+      indices,
+      source: "openrouter",
+    })
+  }
+  return records
+}
+
 export function parseOpenRouterModels(
   body: OpenRouterModelsResponse
 ): Map<string, AaIndices> {
@@ -608,17 +686,53 @@ async function fetchAaFromBenchmarks(): Promise<Map<string, AaIndices>> {
   }
 }
 
-/**
- * Artificial Analysis headline indices via OpenRouter.
- * The public models list is tried first (no key). The benches endpoint
- * needs OPENROUTER_API_KEY and fills gaps. Failures are empty, not fatal.
- */
-export async function fetchAaIndices(): Promise<Map<string, AaIndices>> {
+async function fetchAaFromOfficial(): Promise<AaRecord[]> {
+  const key = process.env.ARTIFICIAL_ANALYSIS_API_KEY
+  if (key == null || key === "") {
+    return []
+  }
+  const records: AaRecord[] = []
+  for (let page = 1; page <= AA_MAX_PAGES; page += 1) {
+    const url = `${AA_API_URL}?page=${page}`
+    try {
+      const response = await fetch(url, {
+        headers: { "x-api-key": key },
+      })
+      if (!response.ok) {
+        break
+      }
+      const body = (await response.json()) as AaFreeResponse
+      records.push(...parseAaFreeModels(body))
+      if (body.pagination?.has_more !== true) {
+        break
+      }
+    } catch {
+      break
+    }
+  }
+  return records
+}
+
+async function fetchAaFromOpenRouter(): Promise<AaRecord[]> {
   const fromModels = await fetchAaFromModels()
   if (fromModels.size > 0) {
-    return fromModels
+    return recordsFromIdMap(fromModels)
   }
-  return fetchAaFromBenchmarks()
+  return recordsFromIdMap(await fetchAaFromBenchmarks())
+}
+
+/**
+ * Artificial Analysis headline indices. The official Free list is tried
+ * first when ARTIFICIAL_ANALYSIS_API_KEY is set. OpenRouter fills gaps
+ * (or stands in when the key is missing). Failures are empty, not fatal.
+ */
+export async function fetchAaIndices(): Promise<AaRecord[]> {
+  const official = await fetchAaFromOfficial()
+  const fallback = await fetchAaFromOpenRouter()
+  if (official.length === 0) {
+    return fallback
+  }
+  return [...official, ...fallback]
 }
 
 export async function fetchEndpointQuotes(

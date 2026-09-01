@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { SNAPSHOT_SCHEMA_VERSION } from "../../lib/gateway-snapshot"
 import {
   formatDuration,
+  parseAaFreeModels,
   parseDeepsecHtml,
   parseDeepsecResults,
   parseModelsPageFlight,
@@ -19,12 +20,15 @@ import {
   everydayDeepsecRun,
   hasNoTraining,
   hasPrivacy,
+  hasQualityFloor,
   hasZdr,
   indexCatalog,
   isCapable,
   lookbackWindow,
+  matchAaRecord,
   matchCatalog,
   matchModelId,
+  modelFamily,
   pickBangForBuck,
   pickCheapRouter,
   pickDefaultWorkhorse,
@@ -39,7 +43,12 @@ import {
   type LeaderboardRow,
   type RankedModel,
 } from "./rank"
-import { buildLists, buildSnapshot, toSnapshotLabs } from "./snapshot"
+import {
+  buildLabBang,
+  buildLists,
+  buildSnapshot,
+  toSnapshotLabs,
+} from "./snapshot"
 
 const capableModel: GatewayModel = {
   id: "deepseek/deepseek-v4-flash",
@@ -87,6 +96,54 @@ const trainsOnPrompts: GatewayModel = {
   zdr: "some",
   no_training: "none",
   pricing: { input: "0.00000025", output: "0.000002" },
+}
+
+const dirtCheapModel: GatewayModel = {
+  id: "acme/free-router",
+  name: "Free Router",
+  owned_by: "acme",
+  type: "language",
+  context_window: 256_000,
+  tags: ["tool-use"],
+  zdr: "none",
+  no_training: "none",
+  pricing: { input: "0.00000005", output: "0.0000001" },
+}
+
+const lunaModel: GatewayModel = {
+  id: "openai/gpt-5.6-luna",
+  name: "GPT 5.6 Luna",
+  owned_by: "openai",
+  type: "language",
+  context_window: 1_050_000,
+  tags: ["tool-use", "reasoning"],
+  zdr: "some",
+  no_training: "all",
+  pricing: { input: "0.0000002", output: "0.0000012" },
+}
+
+const solModel: GatewayModel = {
+  id: "openai/gpt-5.6-sol",
+  name: "GPT 5.6 Sol",
+  owned_by: "openai",
+  type: "language",
+  context_window: 1_050_000,
+  tags: ["tool-use", "reasoning"],
+  zdr: "some",
+  no_training: "all",
+  pricing: { input: "0.000002", output: "0.00001" },
+}
+
+const datedFlash: GatewayModel = {
+  id: "deepseek/deepseek-v4-flash-0731",
+  name: "DeepSeek V4 Flash 0731",
+  owned_by: "deepseek",
+  type: "language",
+  context_window: 1_000_000,
+  tags: ["tool-use", "reasoning"],
+  zdr: "some",
+  no_training: "some",
+  pricing: { input: "0.000000076", output: "0.000000153" },
 }
 
 function ranked(
@@ -228,11 +285,20 @@ describe("gateway-value rank", () => {
 
   it("picks workhorse, cheap router, and frontier", () => {
     const cheap = ranked(capableModel, { tokens: 22.5, requests: 13 })
-    const frontier = ranked(expensiveModel, { tokens: 3.77, spend: 16.61 })
+    const mid = attachAa(ranked(noZdrModel, { tokens: 6 }), {
+      intelligence: 55,
+      coding: 72,
+      agentic: null,
+    })
+    const expensive = attachAa(ranked(expensiveModel, { tokens: 3.77, spend: 16.61 }), {
+      intelligence: 63,
+      coding: 78,
+      agentic: null,
+    })
     expect(isCapable(cheap)).toBe(true)
-    expect(pickDefaultWorkhorse([cheap, frontier])?.id).toBe(capableModel.id)
-    expect(pickCheapRouter([cheap, frontier])?.id).toBe(capableModel.id)
-    expect(pickFrontier([cheap, frontier])?.id).toBe(expensiveModel.id)
+    expect(pickDefaultWorkhorse([cheap, mid, expensive])?.id).toBe(noZdrModel.id)
+    expect(pickCheapRouter([cheap, mid, expensive])?.id).toBe(capableModel.id)
+    expect(pickFrontier([cheap, mid, expensive])?.id).toBe(noZdrModel.id)
   })
 
   it("keeps unmatched board rows out of capable", () => {
@@ -258,7 +324,10 @@ describe("gateway-value rank", () => {
     expect(hasZdr(trains)).toBe(true)
     expect(hasNoTraining(trains)).toBe(false)
     expect(hasPrivacy(trains)).toBe(false)
-    expect(pickCheapRouter([trains])?.id).toBe(trainsOnPrompts.id)
+    expect(pickCheapRouter([ranked(capableModel, { tokens: 8 })])?.id).toBe(
+      capableModel.id
+    )
+    expect(pickCheapRouter([trains])).toBeNull()
     expect(pickCheapRouter([trains].filter(hasPrivacy))).toBeNull()
   })
 
@@ -267,6 +336,58 @@ describe("gateway-value rank", () => {
     expect(matchModelId("xai/grok-4.5", index)?.id).toBe(noZdrModel.id)
     expect(matchModelId("spacexai/grok-4.5", index)?.id).toBe(noZdrModel.id)
     expect(matchModelId("x-ai/grok-4.5:batch", index)?.id).toBe(noZdrModel.id)
+  })
+
+  it("joins punctuation and -preview variants onto catalog ids", () => {
+    const dotted: GatewayModel = {
+      ...noZdrModel,
+      id: "mistral/mistral-medium-3.5",
+      name: "Mistral Medium 3.5",
+    }
+    const preview: GatewayModel = {
+      ...capableModel,
+      id: "google/gemini-3.1-flash-lite",
+      name: "Gemini 3.1 Flash Lite",
+    }
+    const index = indexCatalog([dotted, preview])
+    expect(matchModelId("mistral/mistral-medium-3-5", index)?.id).toBe(dotted.id)
+    expect(
+      matchModelId("google/gemini-3.1-flash-lite-preview", index)?.id
+    ).toBe(preview.id)
+  })
+
+  it("joins Artificial Analysis free-list rows onto catalog ids", () => {
+    const index = indexCatalog([capableModel, noZdrModel])
+    expect(
+      matchAaRecord(
+        {
+          slug: "deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+          creator: "DeepSeek",
+        },
+        index
+      )?.id
+    ).toBe(capableModel.id)
+    expect(
+      matchAaRecord(
+        { slug: "grok-4.5", name: "Grok 4.5", creator: "xAI" },
+        index
+      )?.id
+    ).toBe(noZdrModel.id)
+    expect(
+      matchAaRecord(
+        { slug: "missing-model", name: "Missing", creator: "Acme" },
+        index
+      )
+    ).toBeUndefined()
+  })
+
+  it("treats dated SKUs as the same family", () => {
+    expect(modelFamily(capableModel.id)).toBe("deepseek/deepseek-v4-flash")
+    expect(modelFamily(datedFlash.id)).toBe("deepseek/deepseek-v4-flash")
+    expect(modelFamily("openai/gpt-5.6-sol")).not.toBe(
+      modelFamily("openai/gpt-5.6-luna")
+    )
   })
 
   it("picks bang-for-buck from DeepsecBench score per run dollar", () => {
@@ -314,7 +435,7 @@ describe("gateway-value rank", () => {
     expect(pickBangForBuck([cheap, expensive, blocked])?.id).toBe(
       capableModel.id
     )
-    expect(pickFrontier([cheap, expensive])?.id).toBe(expensiveModel.id)
+    expect(pickFrontier([cheap, expensive])?.id).toBe(capableModel.id)
   })
 
   it("keeps each DeepsecBench run intact", () => {
@@ -358,7 +479,7 @@ describe("gateway-value rank", () => {
     )
   })
 
-  it("falls frontier back to AA intelligence when Deepsec is empty", () => {
+  it("picks frontier on AA intelligence even when Deepsec is present", () => {
     const withAa = attachAa(ranked(capableModel, { tokens: 4 }), {
       intelligence: 41,
       coding: 38,
@@ -374,7 +495,67 @@ describe("gateway-value rank", () => {
     ])
 
     expect(pickFrontier([withAa, weaker])?.id).toBe(capableModel.id)
-    expect(pickFrontier([withAa, weaker, benched])?.id).toBe(expensiveModel.id)
+    expect(pickFrontier([withAa, weaker, benched])?.id).toBe(capableModel.id)
+  })
+
+  it("picks frontier from the full catalog, not only adopted models", () => {
+    const unadopted = attachAa(ranked(solModel, { tokens: 0 }), {
+      intelligence: 61,
+      coding: 77,
+      agentic: null,
+    })
+    const adopted = attachAa(ranked(noZdrModel, { tokens: 8 }), {
+      intelligence: 50,
+      coding: 48,
+      agentic: null,
+    })
+
+    expect(pickFrontier([unadopted, adopted])?.id).toBe(solModel.id)
+  })
+
+  it("keeps a $10 frontier out of the usable-price slot", () => {
+    const sol = attachAa(ranked(solModel, { tokens: 0, spend: 10 }), {
+      intelligence: 60.9,
+      coding: 77.4,
+      agentic: null,
+    })
+    const grok = attachAa(ranked(noZdrModel, {}), {
+      intelligence: 60.9,
+      coding: 76.8,
+      agentic: null,
+    })
+    const opus = attachAa(ranked(expensiveModel, { tokens: 5 }), {
+      intelligence: 63.1,
+      coding: 78,
+      agentic: null,
+    })
+
+    expect(pickFrontier([opus, sol, grok])?.id).toBe(solModel.id)
+    expect(
+      pickRising([opus, sol, grok], { exclude: [sol] })?.id
+    ).toBe(noZdrModel.id)
+  })
+
+  it("picks workhorse from cheap-band models the cheap router did not take", () => {
+    const flash = attachDeepsec(ranked(capableModel, { tokens: 22 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+    const luna = attachDeepsec(ranked(lunaModel, { tokens: 6 }), [
+      run(lunaModel.id, "medium", 12.1, 5.23),
+    ])
+    const mid = attachDeepsec(ranked(noZdrModel, { tokens: 3 }), [
+      run(noZdrModel.id, "medium", 10.5, 8),
+    ])
+    const spendOnly = attachDeepsec(ranked(solModel, { spend: 10 }), [
+      run(solModel.id, "medium", 25.1, 18),
+    ])
+
+    expect(pickCheapRouter([flash, luna, mid, spendOnly])?.id).toBe(
+      capableModel.id
+    )
+    expect(pickDefaultWorkhorse([flash, luna, mid, spendOnly])?.id).toBe(
+      lunaModel.id
+    )
   })
 
   it("picks rising from adopted models the bench has not caught", () => {
@@ -388,6 +569,93 @@ describe("gateway-value rank", () => {
       trainsOnPrompts.id
     )
     expect(pickRising([benched])).toBeNull()
+  })
+
+  it("keeps the cheap-band volume winner out of the workhorse slot", () => {
+    const volume = attachDeepsec(ranked(capableModel, { tokens: 22 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+    const mid = attachDeepsec(ranked(noZdrModel, { tokens: 6 }), [
+      run(noZdrModel.id, "medium", 12, 8),
+    ])
+
+    expect(pickDefaultWorkhorse([volume, mid])?.id).toBe(noZdrModel.id)
+    expect(pickCheapRouter([volume, mid])?.id).toBe(capableModel.id)
+  })
+
+  it("falls workhorse back to AA when the mid band has no Deepsec run", () => {
+    const stronger = attachAa(ranked(noZdrModel, { tokens: 4 }), {
+      intelligence: 57,
+      coding: 71,
+      agentic: null,
+    })
+    const weaker = attachAa(ranked(trainsOnPrompts, { tokens: 8 }), {
+      intelligence: 45,
+      coding: 50,
+      agentic: null,
+    })
+
+    expect(pickDefaultWorkhorse([stronger, weaker])?.id).toBe(noZdrModel.id)
+  })
+
+  it("prefers a quality-floor cheap model over a cheaper unbenchmarked one", () => {
+    const bare = ranked(dirtCheapModel, { tokens: 9 })
+    const qualified = attachAa(ranked(capableModel, { tokens: 5 }), {
+      intelligence: 42,
+      coding: 56,
+      agentic: null,
+    })
+
+    expect(hasQualityFloor(bare)).toBe(false)
+    expect(hasQualityFloor(qualified)).toBe(true)
+    expect(pickCheapRouter([bare, qualified])?.id).toBe(capableModel.id)
+  })
+
+  it("keeps unadopted catalog rows from taking bang-for-buck", () => {
+    const ghost = attachDeepsec(ranked(noZdrModel, {}), [
+      run(noZdrModel.id, "medium", 20, 2),
+    ])
+    const adopted = attachDeepsec(ranked(capableModel, { tokens: 8 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+
+    expect(ghost.deepsecValue?.bang ?? 0).toBeGreaterThan(
+      adopted.deepsecValue?.bang ?? 0
+    )
+    expect(pickBangForBuck([ghost, adopted])?.id).toBe(capableModel.id)
+  })
+
+  it("skips rising siblings of models that already hold a pick", () => {
+    const sibling = ranked(datedFlash, { tokens: 10 })
+    const other = ranked(trainsOnPrompts, { tokens: 5 })
+
+    expect(pickRising([sibling, other])?.id).toBe(datedFlash.id)
+    expect(
+      pickRising([sibling, other], { exclude: [capableModel.id] })?.id
+    ).toBe(trainsOnPrompts.id)
+  })
+
+  it("ranks rising by week-over-week token growth when a prior week exists", () => {
+    const steady = ranked(datedFlash, { tokens: 10 })
+    const climber = ranked(trainsOnPrompts, { tokens: 6 })
+
+    expect(pickRising([steady, climber])?.id).toBe(datedFlash.id)
+    expect(
+      pickRising([steady, climber], {
+        priorTokens: {
+          [datedFlash.id]: 9,
+          [trainsOnPrompts.id]: 1,
+        },
+      })?.id
+    ).toBe(trainsOnPrompts.id)
+  })
+
+  it("falls frontier back to spend share, not overpay", () => {
+    const highOverpay = ranked(capableModel, { tokens: 1, spend: 8 })
+    const highSpend = ranked(noZdrModel, { tokens: 10, spend: 12 })
+
+    expect(highOverpay.overpay ?? 0).toBeGreaterThan(highSpend.overpay ?? 0)
+    expect(pickFrontier([highOverpay, highSpend])?.id).toBe(noZdrModel.id)
   })
 
   it("lets the open pool pick a no-ZDR model with better bang", () => {
@@ -693,6 +961,37 @@ describe("gateway-value rank", () => {
     expect(fromBenches.get("deepseek/deepseek-v4-flash")?.coding).toBe(38)
     expect(fromBenches.has("openai/gpt-5.6-sol")).toBe(false)
   })
+
+  it("parses Artificial Analysis Free API rows", () => {
+    const records = parseAaFreeModels({
+      data: [
+        {
+          slug: "deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+          model_creator: { name: "DeepSeek" },
+          evaluations: {
+            artificial_analysis_intelligence_index: 42.1,
+            artificial_analysis_coding_index: 56.2,
+            artificial_analysis_agentic_index: 33.7,
+          },
+        },
+        {
+          slug: "unscored",
+          name: "Unscored",
+          evaluations: {
+            artificial_analysis_intelligence_index: null,
+            artificial_analysis_coding_index: null,
+            artificial_analysis_agentic_index: null,
+          },
+        },
+      ],
+    })
+    expect(records).toHaveLength(1)
+    expect(records[0]?.slug).toBe("deepseek-v4-flash")
+    expect(records[0]?.creator).toBe("DeepSeek")
+    expect(records[0]?.source).toBe("aa")
+    expect(records[0]?.indices.intelligence).toBeCloseTo(42.1)
+  })
 })
 
 describe("gateway-value snapshot", () => {
@@ -748,6 +1047,10 @@ describe("gateway-value snapshot", () => {
         ["deepseek", { requests: 20, tokens: 28, spend: 2 }],
         ["anthropic", { requests: 18, tokens: 32, spend: 64 }],
       ]),
+      labBang: {
+        privacy: { deepseek: [cheap], anthropic: [] },
+        open: { deepseek: [cheap], anthropic: [] },
+      },
       unmatched: {
         leaderboard: ["Mystery"],
         deepsec: ["xai/missing (xhigh)"],
@@ -756,6 +1059,8 @@ describe("gateway-value snapshot", () => {
     })
 
     expect(snapshot.schemaVersion).toBe(SNAPSHOT_SCHEMA_VERSION)
+    expect(snapshot.lists.privacy.aaIntelligence).toEqual([])
+    expect(snapshot.lists.privacy.aaCoding).toEqual([])
     expect(snapshot.picks.privacy.bangForBuck?.id).toBe(capableModel.id)
     expect(snapshot.picks.privacy.bangForBuck?.noTraining).toBe("some")
     expect(snapshot.stats.privacyModels).toBe(72)
@@ -763,6 +1068,9 @@ describe("gateway-value snapshot", () => {
     expect(snapshot.picks.privacy.frontier).toBeNull()
     expect(snapshot.analysis).toBeNull()
     expect(snapshot.labs[0]?.name).toBe("anthropic")
+    expect(snapshot.labs[1]?.bang.privacy.map((model) => model.id)).toEqual([
+      capableModel.id,
+    ])
     expect(snapshot.unmatched.leaderboard).toEqual(["Mystery"])
   })
 
@@ -774,5 +1082,26 @@ describe("gateway-value snapshot", () => {
       ])
     )
     expect(labs.map((lab) => lab.name)).toEqual(["google", "zai"])
+    expect(labs[0]?.bang.privacy).toEqual([])
+  })
+
+  it("groups unsliced Deepsec bang lists per lab", () => {
+    const flash = attachDeepsec(ranked(capableModel, { tokens: 22 }), [
+      run(capableModel.id, "medium", 15.48, 5.06),
+    ])
+    const opus = attachDeepsec(ranked(expensiveModel, { tokens: 5 }), [
+      run(expensiveModel.id, "xhigh", 32.5, 36),
+    ])
+    const byLab = buildLabBang([flash, opus], [
+      "deepseek",
+      "anthropic",
+      "google",
+    ])
+
+    expect(byLab.deepseek?.map((model) => model.id)).toEqual([capableModel.id])
+    expect(byLab.anthropic?.map((model) => model.id)).toEqual([
+      expensiveModel.id,
+    ])
+    expect(byLab.google).toEqual([])
   })
 })

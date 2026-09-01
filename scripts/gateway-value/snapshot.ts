@@ -1,5 +1,6 @@
 import {
-  AA_BENCHMARKS_URL,
+  AA_API_URL,
+  SNAPSHOT_LIST_LIMIT,
   ATTRIBUTION_LICENSE,
   ATTRIBUTION_LICENSE_URL,
   ATTRIBUTION_TEXT,
@@ -10,12 +11,16 @@ import {
   SNAPSHOT_SCHEMA_VERSION,
   type GatewaySnapshot,
   type SnapshotLab,
+  type SnapshotLaneKey,
   type SnapshotLists,
   type SnapshotModel,
   type SnapshotPicks,
   type SnapshotZdr,
 } from "../../lib/gateway-snapshot"
+import { sameLab } from "../../lib/providers"
 import {
+  byAaCoding,
+  byAaIntelligence,
   byDeepsecBang,
   byDeepsecScore,
   byDiscount,
@@ -41,6 +46,8 @@ export type RankedPicks = {
 }
 
 export type RankedLists = {
+  aaIntelligence: RankedModel[]
+  aaCoding: RankedModel[]
   deepsecBang: RankedModel[]
   deepsecScore: RankedModel[]
   discounted: RankedModel[]
@@ -66,6 +73,7 @@ export type SnapshotInput = {
     open: RankedLists
   }
   labs: Map<string, Adoption>
+  labBang?: Record<SnapshotLaneKey, Record<string, RankedModel[]>>
   unmatched: {
     leaderboard: string[]
     deepsec: string[]
@@ -126,26 +134,77 @@ export function toSnapshotModel(model: RankedModel): SnapshotModel {
   }
 }
 
+export const LAB_LIMIT = 10
+export const LAB_BANG_LIMIT = 8
+
+export function listLabNames(
+  adoption: Map<string, Adoption>,
+  limit = LAB_LIMIT
+): string[] {
+  return [...adoption.entries()]
+    .toSorted((left, right) => right[1].tokens - left[1].tokens)
+    .slice(0, limit)
+    .map(([name]) => name)
+}
+
+export function buildLabBang(
+  ranked: RankedModel[],
+  labs: string[],
+  limit = LAB_BANG_LIMIT
+): Record<string, RankedModel[]> {
+  return Object.fromEntries(
+    labs.map((lab) => [
+      lab,
+      ranked
+        .filter(
+          (model) =>
+            sameLab(model.provider, lab) &&
+            model.deepsecValue?.bang != null &&
+            model.deepsecValue.score >= MIN_DEEPSEC_SCORE
+        )
+        .toSorted(byDeepsecBang)
+        .slice(0, limit),
+    ])
+  )
+}
+
 export function toSnapshotLabs(
   adoption: Map<string, Adoption>,
-  limit = 10
+  bang: Record<SnapshotLaneKey, Record<string, RankedModel[]>> = {
+    privacy: {},
+    open: {},
+  },
+  limit = LAB_LIMIT
 ): SnapshotLab[] {
-  return [...adoption.entries()]
-    .map(([name, metrics]) => ({
+  return listLabNames(adoption, limit).map((name) => {
+    const metrics = adoption.get(name) ?? { requests: 0, tokens: 0, spend: 0 }
+    return {
       name,
       requestsShare: metrics.requests,
       tokensShare: metrics.tokens,
       spendShare: metrics.spend,
-    }))
-    .toSorted((left, right) => right.tokensShare - left.tokensShare)
-    .slice(0, limit)
+      bang: {
+        privacy: (bang.privacy[name] ?? []).map(toSnapshotModel),
+        open: (bang.open[name] ?? []).map(toSnapshotModel),
+      },
+    }
+  })
 }
 
 export function buildLists(
   ranked: RankedModel[],
   leaderboard: RankedModel[]
 ): RankedLists {
+  const limit = SNAPSHOT_LIST_LIMIT
   return {
+    aaIntelligence: ranked
+      .filter((model) => model.aa?.intelligence != null)
+      .toSorted(byAaIntelligence)
+      .slice(0, limit),
+    aaCoding: ranked
+      .filter((model) => model.aa?.coding != null)
+      .toSorted(byAaCoding)
+      .slice(0, limit),
     deepsecBang: ranked
       .filter(
         (model) =>
@@ -153,12 +212,15 @@ export function buildLists(
           model.deepsecValue.score >= MIN_DEEPSEC_SCORE
       )
       .toSorted(byDeepsecBang)
-      .slice(0, 12),
+      .slice(0, limit),
     deepsecScore: ranked
       .filter((model) => model.deepsecBest != null)
       .toSorted(byDeepsecScore)
-      .slice(0, 8),
-    discounted: ranked.filter((model) => model.discounted).toSorted(byDiscount),
+      .slice(0, limit),
+    discounted: ranked
+      .filter((model) => model.discounted)
+      .toSorted(byDiscount)
+      .slice(0, limit),
     cheapCapable: ranked
       .filter(
         (model) =>
@@ -171,9 +233,10 @@ export function buildLists(
         (left, right) =>
           (effectiveBlend(left) ?? Number.POSITIVE_INFINITY) -
           (effectiveBlend(right) ?? Number.POSITIVE_INFINITY)
-      ),
-    tokenShare: leaderboard.toSorted(byTokenShare).slice(0, 8),
-    spendShare: leaderboard.toSorted(bySpendShare).slice(0, 8),
+      )
+      .slice(0, limit),
+    tokenShare: leaderboard.toSorted(byTokenShare).slice(0, limit),
+    spendShare: leaderboard.toSorted(bySpendShare).slice(0, limit),
   }
 }
 
@@ -189,6 +252,8 @@ export function toSnapshotPicks(picks: RankedPicks): SnapshotPicks {
 
 export function toSnapshotLists(lists: RankedLists): SnapshotLists {
   return {
+    aaIntelligence: lists.aaIntelligence.map(toSnapshotModel),
+    aaCoding: lists.aaCoding.map(toSnapshotModel),
     deepsecBang: lists.deepsecBang.map(toSnapshotModel),
     deepsecScore: lists.deepsecScore.map(toSnapshotModel),
     discounted: lists.discounted.map(toSnapshotModel),
@@ -212,7 +277,7 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
       models: MODELS_LEADERBOARD_URL,
       labs: LABS_LEADERBOARD_URL,
       deepsec: DEEPSEC_RESULTS_URL,
-      aa: AA_BENCHMARKS_URL,
+      aa: AA_API_URL,
     },
     attribution: {
       text: ATTRIBUTION_TEXT,
@@ -234,7 +299,7 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
       privacy: toSnapshotLists(input.lists.privacy),
       open: toSnapshotLists(input.lists.open),
     },
-    labs: toSnapshotLabs(input.labs),
+    labs: toSnapshotLabs(input.labs, input.labBang),
     unmatched: input.unmatched,
     analysis: null,
   }

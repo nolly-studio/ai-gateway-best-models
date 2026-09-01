@@ -8,6 +8,8 @@ import {
   laneHeading,
   ledgerBangMetric,
   ledgerBlendMetric,
+  ledgerCodingMetric,
+  ledgerIntelMetric,
   ledgerScoreMetric,
   pickMetrics,
   laneHint,
@@ -141,7 +143,7 @@ describe("pickMetrics", () => {
     expect(metrics[0]?.hint).toContain("medium")
   })
 
-  it("uses AA intelligence when frontier has no Deepsec run", () => {
+  it("leads frontier with AA intelligence and does not mark it missing", () => {
     const rising = model("zai/glm-5.3-flash", "GLM 5.3 Flash")
     rising.tokensShare = 5
     rising.aa = { intelligence: 28, coding: 31, agentic: null }
@@ -150,14 +152,33 @@ describe("pickMetrics", () => {
         (metric) => [metric.kind, metric.value]
       )
     ).toEqual([
-      ["missing", "—"],
-      ["tokens", "5.0%"],
       ["aa", "28.0"],
+      ["tokens", "5.0%"],
     ])
     expect(aaFootnote(rising.aa)).toBe("AA intel 28.0")
   })
 
-  it("marks rising as unbenchmarked", () => {
+  it("does not duplicate AA or invent a Deepsec score on frontier", () => {
+    const sol = model("openai/gpt-5.6-sol", "GPT 5.6 Sol")
+    sol.tokensShare = 2
+    sol.aa = { intelligence: 60.9, coding: 58, agentic: null }
+    sol.deepsecBest = {
+      score: 28,
+      effort: "xhigh",
+      costUsd: 32,
+      bang: 0.88,
+    }
+    expect(
+      pickMetrics(sol, [{ key: "frontier", label: "Frontier" }]).map(
+        (metric) => [metric.kind, metric.value]
+      )
+    ).toEqual([
+      ["aa", "60.9"],
+      ["tokens", "2.0%"],
+    ])
+  })
+
+  it("marks rising as unbenchmarked when it has no AA or Deepsec score", () => {
     const rising = model("deepseek/deepseek-v4-flash-0731", "Flash 0731")
     rising.tokensShare = 6.3
     expect(
@@ -168,6 +189,17 @@ describe("pickMetrics", () => {
       ["missing", "—"],
       ["tokens", "6.3%"],
     ])
+  })
+
+  it("leads rising with AA intelligence", () => {
+    const grok = model("spacexai/grok-4.6", "Grok 4.6")
+    grok.tokensShare = 0
+    grok.aa = { intelligence: 60.9, coding: 76.8, agentic: null }
+    expect(
+      pickMetrics(grok, [{ key: "rising", label: "Rising" }]).map(
+        (metric) => [metric.kind, metric.value]
+      )
+    ).toEqual([["aa", "60.9"]])
   })
 })
 
@@ -277,6 +309,8 @@ describe("ledger metrics", () => {
     rising.aa = { intelligence: 28, coding: 31, agentic: null }
 
     expect(ledgerScoreMetric(rising)).toEqual({ value: "28.0", note: "AA" })
+    expect(ledgerIntelMetric(rising)).toEqual({ value: "28.0", note: "AA" })
+    expect(ledgerCodingMetric(rising)).toEqual({ value: "31.0", note: "AA" })
     expect(ledgerBangMetric(rising)).toEqual({ value: "—", note: null })
   })
 })

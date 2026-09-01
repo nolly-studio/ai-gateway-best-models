@@ -6,8 +6,8 @@ import { PageFrame, PageHeader } from "@/components/page-frame"
 import { SiteFooter } from "@/components/site-footer"
 import { TextLink } from "@/components/text-link"
 import {
+  AA_API_URL,
   AA_ATTRIBUTION,
-  AA_BENCHMARKS_URL,
   CATALOG_URL,
   DEEPSEC_RESULTS_URL,
   LABS_LEADERBOARD_URL,
@@ -20,7 +20,7 @@ import { methodologyJsonLd } from "@/lib/seo"
 
 const title = "How we rank AI Gateway models"
 const description =
-  "Independent methodology for weekly Vercel AI Gateway picks: ZDR + no-training filters, capable-model rules, blended price, bang-for-buck, and DeepsecBench."
+  "Independent methodology for weekly Vercel AI Gateway picks: ZDR + no-training filters, capable-model rules, blended price, bang-for-buck, Artificial Analysis, and DeepsecBench."
 
 export const metadata: Metadata = {
   title,
@@ -96,22 +96,33 @@ export default async function MethodologyPage() {
           <li>
             <strong className="font-medium text-ink">Bang-for-buck</strong> is a
             DeepsecBench run&apos;s score divided by that same run&apos;s cost —
-            runs are never mixed. Frontier is the highest single-run score among
-            capable models, falling back to Artificial Analysis intelligence
-            only when nobody in the pool has a Deepsec run. We ignore Deepsec
-            runs scoring below {RANKING_RULES.minDeepsecScore} when ranking
-            bang.
+            runs are never mixed. Adopted models take the homepage slot when any
+            qualify. Frontier is the highest Artificial Analysis intelligence
+            index among capable models at or under $
+            {RANKING_RULES.midBlendUsd.toFixed(2)} / 1M — coding, then Deepsec,
+            then cheaper blend break ties. Deepsec highest score is the
+            fallback only when nobody in-band has AA, then spend share — not
+            overpay. Ranked boards show the top {RANKING_RULES.listLimit} of
+            each metric. We ignore Deepsec runs scoring below{" "}
+            {RANKING_RULES.minDeepsecScore} when ranking bang.
           </li>
           <li>
             <strong className="font-medium text-ink">Cheap router</strong> is
-            the cheapest adopted capable model blending at or under $
-            {RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M.{" "}
+            the cheapest capable model blending at or under $
+            {RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M that also clears a
+            quality floor (Deepsec ≥ {RANKING_RULES.minDeepsecScore} or AA
+            intel/coding ≥ {RANKING_RULES.minAaQuality}).{" "}
             <strong className="font-medium text-ink">Workhorse</strong> is the
             highest everyday-run Deepsec score among capable models holding at
             least {RANKING_RULES.workhorseMinTokenShare}% token share at or
-            under ${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M.{" "}
+            under ${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M, excluding the
+            cheap-router family — AA intelligence is the fallback when nobody
+            in that pool is benchmarked.{" "}
             <strong className="font-medium text-ink">Rising</strong> is the
-            most-adopted capable model DeepsecBench has not benchmarked yet.
+            leftover capable model in that same usable band, ranked on AA
+            first so a high-quality catalog row the other roles missed can
+            surface. Week-over-week token-share growth is the fallback when
+            nobody leftover has AA.
           </li>
         </ul>
       </section>
@@ -146,8 +157,8 @@ export default async function MethodologyPage() {
             </TextLink>
           </li>
           <li>
-            <TextLink external href={AA_BENCHMARKS_URL}>
-              Artificial Analysis indices via OpenRouter
+            <TextLink external href={AA_API_URL}>
+              Artificial Analysis language models (Free API)
             </TextLink>{" "}
             — {AA_ATTRIBUTION}
           </li>

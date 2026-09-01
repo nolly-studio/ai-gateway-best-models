@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
   emptyHistory,
   HISTORY_SCHEMA_VERSION,
+  priorWeekTokenShares,
   SNAPSHOT_SCHEMA_VERSION,
   toHistoryWeek,
+  tokenSharesFromModels,
   upsertHistory,
   weekSnapshotPublicPath,
   type GatewaySnapshot,
@@ -115,6 +117,8 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
     },
     lists: {
       privacy: {
+        aaIntelligence: [],
+        aaCoding: [],
         deepsecBang: [],
         deepsecScore: [],
         discounted: [],
@@ -123,6 +127,8 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
         spendShare: [],
       },
       open: {
+        aaIntelligence: [],
+        aaCoding: [],
         deepsecBang: [],
         deepsecScore: [],
         discounted: [],
@@ -162,6 +168,37 @@ describe("toHistoryWeek", () => {
       valueScore: 197.97,
     })
     expect(week.pickMetrics.privacy.frontier?.valueScore).toBeNull()
+    expect(week.tokenShares).toBeUndefined()
+  })
+
+  it("stores token shares for the next week's rising sort", () => {
+    const week = toHistoryWeek(snapshot(), {
+      "deepseek/deepseek-v4-flash": 22.27,
+      "stepfun/step-3.7-flash": 10.1,
+    })
+
+    expect(week.tokenShares).toEqual({
+      "deepseek/deepseek-v4-flash": 22.27,
+      "stepfun/step-3.7-flash": 10.1,
+    })
+    expect(
+      priorWeekTokenShares(
+        { schemaVersion: HISTORY_SCHEMA_VERSION, weeks: [week] },
+        "2026-09-07"
+      )
+    ).toEqual(week.tokenShares)
+    expect(
+      priorWeekTokenShares(
+        { schemaVersion: HISTORY_SCHEMA_VERSION, weeks: [week] },
+        "2026-08-31"
+      )
+    ).toBeUndefined()
+    expect(
+      tokenSharesFromModels([
+        { id: "deepseek/deepseek-v4-flash", tokensShare: 22.27 },
+        { id: "openai/gpt-5.6-sol", tokensShare: 0 },
+      ])
+    ).toEqual({ "deepseek/deepseek-v4-flash": 22.27 })
   })
 
   it("omits metrics for a missing pick", () => {

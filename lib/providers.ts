@@ -49,3 +49,15 @@ export function resolveProviderSlug(
   }
   return ALIASES[provider.toLowerCase()] ?? null
 }
+
+export function sameLab(provider: string | null, lab: string): boolean {
+  if (provider == null || provider.length === 0) {
+    return false
+  }
+  if (provider.toLowerCase() === lab.toLowerCase()) {
+    return true
+  }
+  const providerSlug = resolveProviderSlug(provider)
+  const labSlug = resolveProviderSlug(lab)
+  return providerSlug != null && providerSlug === labSlug
+}

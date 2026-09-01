@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 import {
-  AA_BENCHMARKS_URL,
+  AA_API_URL,
   HISTORY_RELATIVE_PATH,
   HISTORY_SCHEMA_VERSION,
   SNAPSHOT_LANE_KEYS,
@@ -15,12 +15,14 @@ import {
   type GatewayHistory,
   type GatewaySnapshot,
   type SnapshotDeepsecRun,
+  type SnapshotLab,
   type SnapshotLaneKey,
   type SnapshotLists,
   type SnapshotModel,
   type SnapshotPickKey,
   type SnapshotPicks,
 } from "@/lib/gateway-snapshot"
+import { sameLab } from "@/lib/providers"
 
 function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error
@@ -46,7 +48,11 @@ type LegacySnapshot = Omit<
     SnapshotLaneKey,
     Partial<Record<SnapshotPickKey, LegacyModel | null>>
   >
-  lists: Record<SnapshotLaneKey, Record<keyof SnapshotLists, LegacyModel[]>>
+  lists: Record<
+    SnapshotLaneKey,
+    Partial<Record<keyof SnapshotLists, LegacyModel[]>>
+  >
+  labs: Array<Omit<SnapshotLab, "bang"> & { bang?: SnapshotLab["bang"] }>
 }
 
 function normalizeModel(model: LegacyModel): SnapshotModel {
@@ -87,12 +93,14 @@ function normalizeSnapshot(raw: LegacySnapshot): GatewaySnapshot {
     picks[lane] = lanePicks
     const rawLists = raw.lists[lane]
     lists[lane] = {
-      deepsecBang: rawLists.deepsecBang.map(normalizeModel),
-      deepsecScore: rawLists.deepsecScore.map(normalizeModel),
-      discounted: rawLists.discounted.map(normalizeModel),
-      cheapCapable: rawLists.cheapCapable.map(normalizeModel),
-      tokenShare: rawLists.tokenShare.map(normalizeModel),
-      spendShare: rawLists.spendShare.map(normalizeModel),
+      aaIntelligence: (rawLists.aaIntelligence ?? []).map(normalizeModel),
+      aaCoding: (rawLists.aaCoding ?? []).map(normalizeModel),
+      deepsecBang: (rawLists.deepsecBang ?? []).map(normalizeModel),
+      deepsecScore: (rawLists.deepsecScore ?? []).map(normalizeModel),
+      discounted: (rawLists.discounted ?? []).map(normalizeModel),
+      cheapCapable: (rawLists.cheapCapable ?? []).map(normalizeModel),
+      tokenShare: (rawLists.tokenShare ?? []).map(normalizeModel),
+      spendShare: (rawLists.spendShare ?? []).map(normalizeModel),
     }
   }
   return {
@@ -100,7 +108,7 @@ function normalizeSnapshot(raw: LegacySnapshot): GatewaySnapshot {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     sources: {
       ...raw.sources,
-      aa: raw.sources.aa ?? AA_BENCHMARKS_URL,
+      aa: raw.sources.aa ?? AA_API_URL,
     },
     stats: {
       ...raw.stats,
@@ -112,6 +120,17 @@ function normalizeSnapshot(raw: LegacySnapshot): GatewaySnapshot {
     },
     picks,
     lists,
+    labs: raw.labs.map((lab) => ({
+      ...lab,
+      bang: lab.bang ?? {
+        privacy: lists.privacy.deepsecBang.filter((model) =>
+          sameLab(model.provider, lab.name)
+        ),
+        open: lists.open.deepsecBang.filter((model) =>
+          sameLab(model.provider, lab.name)
+        ),
+      },
+    })),
   }
 }
 

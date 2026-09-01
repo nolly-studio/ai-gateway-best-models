@@ -7,6 +7,7 @@ import { ModelLedger } from "@/components/model-ledger"
 import { HeroLead } from "@/components/hero-lead"
 import { PageFrame, PageHeader } from "@/components/page-frame"
 import { SiteFooter } from "@/components/site-footer"
+import { VercelLogo } from "@/components/vercel-logo"
 import { TextLink } from "@/components/text-link"
 import { WeeklyPicks } from "@/components/weekly-picks"
 import { formatWindow } from "@/lib/format"
@@ -62,7 +63,15 @@ export default async function Page() {
             models · {snapshot.stats.privacyModels} ZDR+NPT
           </>
         }
-        title="Best models on AI Gateway"
+        title={
+          <>
+            Best models on{" "}
+            <span className="whitespace-nowrap">
+              <VercelLogo className="mr-[0.22em] inline-block h-[0.62em] w-auto translate-y-[-0.03em]" />
+              Vercel AI Gateway
+            </span>
+          </>
+        }
       >
         <HeroLead snapshot={snapshot} />
       </PageHeader>

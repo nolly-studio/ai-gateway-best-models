@@ -16,10 +16,21 @@
  *   each role reads the run that matches it. Score, effort, and cost are
  *   never mixed across runs.
  * Bang-for-buck = the value run's score / that same run's cost.
- * Frontier = highest best-run score; AA intelligence if nobody has Deepsec.
- * Workhorse = most capable model people actually run at mid price: adoption
- *   floor + everyday-run score, blend ≤ MID_BLEND_USD.
- * Rising = adopted capable model DeepsecBench has not benchmarked yet.
+ * Frontier = highest AA intelligence among capable models at a usable
+ *   price (effective blend ≤ MID_BLEND_USD). Coding, then Deepsec, then
+ *   cheaper blend break ties. $10 Opus does not take a default slot.
+ *   Deepsec best-run is the fallback only when nobody in-band has AA,
+ *   then spend share.
+ * Workhorse = the capable model people actually run (token share floor)
+ *   at or under MID_BLEND_USD, excluding the cheap-router family so the
+ *   $0.10 volume winner cannot take both slots. Everyday Deepsec first;
+ *   AA intelligence is the fallback — never averaged with Deepsec.
+ * Cheap = cheapest capable model at or under CHEAP_BLEND_USD that clears
+ *   a quality floor (Deepsec ≥ MIN or AA intel/coding ≥ MIN_AA_QUALITY).
+ * Rising = leftover capable model at a usable price, excluding families
+ *   that already hold a pick. AA intelligence first so a high-quality
+ *   catalog row like Grok can surface; week-over-week token growth is
+ *   the fallback when nobody leftover has AA.
  * Discount = official AI Gateway list-vs-sale promo from the models page
  *   (`inputListCostTiers` vs current `inputCost`). Cheaper third-party
  *   endpoints are a routing price, not a sale. Must clear
@@ -29,11 +40,14 @@ export const LOOKBACK_DAYS = 7
 export const INPUT_WEIGHT = 3
 export const OUTPUT_WEIGHT = 1
 export const CHEAP_BLEND_USD = 0.5
-export const MID_BLEND_USD = 3
+export const MID_BLEND_USD = 6
 export const MIN_CONTEXT = 128_000
 export const MIN_DEEPSEC_SCORE = 12
+export const MIN_AA_QUALITY = 40
 export const MIN_DISCOUNT_PERCENT = 5
 export const WORKHORSE_MIN_TOKEN_SHARE = 3
+/** Exclusive lower bound: workhorse starts above the cheap-router cap. */
+export const WORKHORSE_MIN_BLEND_USD = CHEAP_BLEND_USD
 export const UNMATCHED_ID = "unmatched"
 
 export const DEEPSEC_ID_ALIASES: Record<string, string> = {
@@ -149,11 +163,20 @@ export type DeepsecRunSummary = {
   bang: number | null
 }
 
-/** Artificial Analysis headline indices (via OpenRouter). */
+/** Artificial Analysis headline indices. */
 export type AaIndices = {
   intelligence: number | null
   coding: number | null
   agentic: number | null
+}
+
+/** One language-model row from AA or the OpenRouter fallback. */
+export type AaRecord = {
+  slug: string
+  name: string
+  creator: string | null
+  indices: AaIndices
+  source: "aa" | "openrouter"
 }
 
 export type RankedModel = {
@@ -200,12 +223,38 @@ export type CatalogIndex = {
   byName: Map<string, GatewayModel>
   byIdTail: Map<string, GatewayModel>
   byId: Map<string, GatewayModel>
+  /** Punctuation-insensitive id, with a trailing -preview stripped. */
+  byNormalizedId: Map<string, GatewayModel>
 }
 
 const PREVIEW_SUFFIX = /\s*preview$/i
+const ID_PREVIEW_SUFFIX = /[-_]?preview$/i
+const DATED_SKU_SUFFIX = /-\d{3,8}$/
 
 export function normalizeName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "")
+}
+
+/** Strip a trailing -preview so AA ids join catalog ids without the suffix. */
+export function stripIdPreview(id: string): string {
+  return id.replace(ID_PREVIEW_SUFFIX, "")
+}
+
+/**
+ * Punctuation-insensitive model id. `mistral/mistral-medium-3-5` and
+ * `mistral/mistral-medium-3.5` collapse to the same key.
+ */
+export function normalizeModelId(id: string): string {
+  return normalizeName(stripIdPreview(canonicalOpenRouterId(id)))
+}
+
+/**
+ * Family key used to keep sibling SKUs (dated snapshots like `-0731`) from
+ * occupying a second homepage role. Different products in a generation
+ * (`gpt-5.6-sol` vs `gpt-5.6-luna`) stay distinct.
+ */
+export function modelFamily(id: string): string {
+  return stripIdPreview(canonicalOpenRouterId(id)).replace(DATED_SKU_SUFFIX, "")
 }
 
 export function stripPreview(value: string): string {
@@ -289,9 +338,11 @@ export function indexCatalog(models: GatewayModel[]): CatalogIndex {
   const byName = new Map<string, GatewayModel>()
   const byIdTail = new Map<string, GatewayModel>()
   const byId = new Map<string, GatewayModel>()
+  const byNormalizedId = new Map<string, GatewayModel>()
 
   for (const model of models) {
     byId.set(model.id, model)
+    byNormalizedId.set(normalizeModelId(model.id), model)
     byName.set(normalizeName(model.name), model)
     byName.set(normalizeName(stripPreview(model.name)), model)
     const idTail = model.id.split("/").at(-1)
@@ -300,7 +351,7 @@ export function indexCatalog(models: GatewayModel[]): CatalogIndex {
     }
   }
 
-  return { byName, byIdTail, byId }
+  return { byName, byIdTail, byId, byNormalizedId }
 }
 
 export function matchCatalog(
@@ -330,7 +381,59 @@ export function matchModelId(
   return (
     index.byId.get(aliased) ??
     index.byId.get(id) ??
-    index.byId.get(canonicalOpenRouterId(id))
+    index.byId.get(canonicalOpenRouterId(id)) ??
+    index.byNormalizedId.get(normalizeModelId(aliased)) ??
+    index.byNormalizedId.get(normalizeModelId(id))
+  )
+}
+
+const AA_CREATOR_PREFIX: Record<string, string> = {
+  openai: "openai",
+  anthropic: "anthropic",
+  google: "google",
+  deepseek: "deepseek",
+  xai: "spacexai",
+  spacexai: "spacexai",
+  alibaba: "alibaba",
+  qwen: "alibaba",
+  zai: "zai",
+  zhipu: "zai",
+  glm: "zai",
+  minimax: "minimax",
+  moonshot: "moonshotai",
+  moonshotai: "moonshotai",
+  kimi: "moonshotai",
+  meta: "meta",
+  llama: "meta",
+  mistral: "mistral",
+  stepfun: "stepfun",
+  bytedance: "bytedance",
+  amazon: "amazon",
+  nvidia: "nvidia",
+}
+
+export function aaCreatorPrefix(creator: string | null): string | null {
+  if (creator == null || creator === "") {
+    return null
+  }
+  return AA_CREATOR_PREFIX[normalizeName(creator)] ?? normalizeName(creator)
+}
+
+/**
+ * Join an Artificial Analysis free-list row onto the Gateway catalog.
+ * Tries creator/slug, bare slug, id tail, then display name.
+ */
+export function matchAaRecord(
+  record: Pick<AaRecord, "slug" | "name" | "creator">,
+  index: CatalogIndex
+): GatewayModel | undefined {
+  const prefix = aaCreatorPrefix(record.creator)
+  const prefixed = prefix == null ? null : `${prefix}/${record.slug}`
+  return (
+    (prefixed == null ? undefined : matchModelId(prefixed, index)) ??
+    matchModelId(record.slug, index) ??
+    index.byIdTail.get(normalizeName(record.slug)) ??
+    matchCatalog(record.name, index)
   )
 }
 
@@ -687,45 +790,126 @@ export function isCapable(model: RankedModel): boolean {
   )
 }
 
+export function hasQualityFloor(model: RankedModel): boolean {
+  const deepsec = model.deepsecValue?.score ?? model.deepsecBest?.score ?? 0
+  if (deepsec >= MIN_DEEPSEC_SCORE) {
+    return true
+  }
+  const intelligence = model.aa?.intelligence ?? 0
+  const coding = model.aa?.coding ?? 0
+  return intelligence >= MIN_AA_QUALITY || coding >= MIN_AA_QUALITY
+}
+
+export function inCheapBand(model: RankedModel): boolean {
+  const blend = effectiveBlend(model)
+  return blend != null && blend <= CHEAP_BLEND_USD
+}
+
+export function inWorkhorseBand(model: RankedModel): boolean {
+  const blend = effectiveBlend(model)
+  return (
+    blend != null &&
+    blend > WORKHORSE_MIN_BLEND_USD &&
+    blend <= MID_BLEND_USD
+  )
+}
+
+/** Price you would actually set as a product default. */
+export function inUsableBand(model: RankedModel): boolean {
+  const blend = effectiveBlend(model)
+  return blend != null && blend <= MID_BLEND_USD
+}
+
+function firstWhere<T>(
+  candidates: T[][],
+  predicate: (item: T) => boolean = () => true
+): T[] {
+  for (const pool of candidates) {
+    const matched = pool.filter(predicate)
+    if (matched.length > 0) {
+      return matched
+    }
+  }
+  return []
+}
+
+function byEverydayThenAdoption(left: RankedModel, right: RankedModel): number {
+  const scoreDelta =
+    (right.deepsecEveryday?.score ?? 0) - (left.deepsecEveryday?.score ?? 0)
+  if (scoreDelta !== 0) {
+    return scoreDelta
+  }
+  if (right.tokensShare !== left.tokensShare) {
+    return right.tokensShare - left.tokensShare
+  }
+  return (effectiveBlend(left) ?? 0) - (effectiveBlend(right) ?? 0)
+}
+
+function byAaThenAdoption(left: RankedModel, right: RankedModel): number {
+  const intelDelta =
+    (right.aa?.intelligence ?? 0) - (left.aa?.intelligence ?? 0)
+  if (intelDelta !== 0) {
+    return intelDelta
+  }
+  const codingDelta = (right.aa?.coding ?? 0) - (left.aa?.coding ?? 0)
+  if (codingDelta !== 0) {
+    return codingDelta
+  }
+  if (right.tokensShare !== left.tokensShare) {
+    return right.tokensShare - left.tokensShare
+  }
+  return (effectiveBlend(left) ?? 0) - (effectiveBlend(right) ?? 0)
+}
+
+function byUsableQuality(left: RankedModel, right: RankedModel): number {
+  const intelDelta =
+    (right.aa?.intelligence ?? 0) - (left.aa?.intelligence ?? 0)
+  if (intelDelta !== 0) {
+    return intelDelta
+  }
+  const codingDelta = (right.aa?.coding ?? 0) - (left.aa?.coding ?? 0)
+  if (codingDelta !== 0) {
+    return codingDelta
+  }
+  const deepsecDelta =
+    (right.deepsecBest?.score ?? 0) - (left.deepsecBest?.score ?? 0)
+  if (deepsecDelta !== 0) {
+    return deepsecDelta
+  }
+  return (
+    (effectiveBlend(left) ?? Number.POSITIVE_INFINITY) -
+    (effectiveBlend(right) ?? Number.POSITIVE_INFINITY)
+  )
+}
+
 /**
- * Workhorse = the most capable model people actually run at mid price.
- * Not another price-efficiency sort: adoption gates entry, and quality comes
- * from the everyday (lowest published effort) DeepsecBench run, not the
- * xhigh showcase. Falls back to any adopted candidate when nothing clears
- * the token-share floor, and to adoption order when nothing is benchmarked.
+ * Workhorse = the capable model people actually run at a usable price.
+ * The cheap-router family is excluded so the $0.10 volume winner cannot
+ * also take this slot. Cheap-band models with real token share (Luna)
+ * stay eligible. Quality comes from the everyday Deepsec run; AA
+ * intelligence is the fallback — never averaged with Deepsec.
  */
 export function pickDefaultWorkhorse(
-  leaderboard: RankedModel[]
+  models: RankedModel[]
 ): RankedModel | null {
-  const affordable = leaderboard.filter(
-    (model) =>
-      isCapable(model) &&
-      effectiveBlend(model) != null &&
-      (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <= MID_BLEND_USD
-  )
-  const overFloor = affordable.filter(
+  const cheap = pickCheapRouter(models)
+  const taken = excludedFamilies([cheap])
+  const usable = models.filter((model) => isCapable(model) && inUsableBand(model))
+  const overFloor = usable.filter(
     (model) => model.tokensShare >= WORKHORSE_MIN_TOKEN_SHARE
   )
-  const pool =
-    overFloor.length > 0 ? overFloor : affordable.filter(hasAdoption)
+  const adopted = overFloor.length > 0 ? overFloor : usable.filter(hasAdoption)
+  const withoutCheap = adopted.filter(
+    (model) => !taken.has(modelFamily(model.id))
+  )
+  const pool = withoutCheap.length > 0 ? withoutCheap : adopted
   const benchmarked = pool.filter((model) => model.deepsecEveryday != null)
   if (benchmarked.length > 0) {
-    return (
-      benchmarked
-        .toSorted((left, right) => {
-          const scoreDelta =
-            (right.deepsecEveryday?.score ?? 0) -
-            (left.deepsecEveryday?.score ?? 0)
-          if (scoreDelta !== 0) {
-            return scoreDelta
-          }
-          if (right.tokensShare !== left.tokensShare) {
-            return right.tokensShare - left.tokensShare
-          }
-          return (effectiveBlend(left) ?? 0) - (effectiveBlend(right) ?? 0)
-        })
-        .at(0) ?? null
-    )
+    return benchmarked.toSorted(byEverydayThenAdoption).at(0) ?? null
+  }
+  const withAa = pool.filter((model) => hasAaIndex(model.aa))
+  if (withAa.length > 0) {
+    return withAa.toSorted(byAaThenAdoption).at(0) ?? null
   }
   return (
     pool
@@ -739,35 +923,41 @@ export function pickDefaultWorkhorse(
   )
 }
 
-export function pickCheapRouter(models: RankedModel[]): RankedModel | null {
-  const adopted = models.filter(
-    (model) =>
-      isCapable(model) &&
-      hasAdoption(model) &&
-      effectiveBlend(model) != null &&
-      (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <= CHEAP_BLEND_USD
-  )
-  const pool = adopted.length > 0 ? adopted : models.filter(isCapable)
-  // Cheapest effective price wins; a discount only breaks exact price ties.
-  return (
-    pool
-      .toSorted((left, right) => {
-        const priceDelta =
-          (effectiveBlend(left) ?? Number.POSITIVE_INFINITY) -
-          (effectiveBlend(right) ?? Number.POSITIVE_INFINITY)
-        if (priceDelta !== 0) {
-          return priceDelta
-        }
-        return Number(right.discounted) - Number(left.discounted)
-      })
-      .at(0) ?? null
-  )
+function byCheapPrice(left: RankedModel, right: RankedModel): number {
+  const priceDelta =
+    (effectiveBlend(left) ?? Number.POSITIVE_INFINITY) -
+    (effectiveBlend(right) ?? Number.POSITIVE_INFINITY)
+  if (priceDelta !== 0) {
+    return priceDelta
+  }
+  return Number(right.discounted) - Number(left.discounted)
 }
 
-export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
-  const withScore = leaderboard.filter(
-    (model) => isCapable(model) && model.deepsecBest != null
+export function pickCheapRouter(models: RankedModel[]): RankedModel | null {
+  const capableCheap = models.filter(
+    (model) => isCapable(model) && inCheapBand(model)
   )
+  const pool = firstWhere([
+    capableCheap.filter((model) => hasQualityFloor(model) && hasAdoption(model)),
+    capableCheap.filter(hasQualityFloor),
+    capableCheap.filter(hasAdoption),
+    capableCheap,
+  ])
+  // Cheapest effective price wins; a discount only breaks exact price ties.
+  return pool.toSorted(byCheapPrice).at(0) ?? null
+}
+
+export function pickFrontier(models: RankedModel[]): RankedModel | null {
+  // Usable-price AA ranking. A $10 model does not win a default slot
+  // over a 60+ index at $3–4. Deepsec only breaks AA ties, then is the
+  // fallback when nobody in-band has AA.
+  const usable = models.filter((model) => isCapable(model) && inUsableBand(model))
+  const withAa = usable.filter((model) => model.aa?.intelligence != null)
+  if (withAa.length > 0) {
+    return withAa.toSorted(byUsableQuality).at(0) ?? null
+  }
+
+  const withScore = usable.filter((model) => model.deepsecBest != null)
   if (withScore.length > 0) {
     return (
       withScore
@@ -783,46 +973,9 @@ export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
     )
   }
 
-  // DeepsecBench is the primary frontier signal. AA intelligence is only a
-  // fallback so unbenchmarked capable models are not invisible.
-  const withAa = leaderboard.filter(
-    (model) => isCapable(model) && model.aa?.intelligence != null
-  )
-  if (withAa.length > 0) {
-    return (
-      withAa
-        .toSorted((left, right) => {
-          const intelDelta =
-            (right.aa?.intelligence ?? 0) - (left.aa?.intelligence ?? 0)
-          if (intelDelta !== 0) {
-            return intelDelta
-          }
-          return (right.aa?.coding ?? 0) - (left.aa?.coding ?? 0)
-        })
-        .at(0) ?? null
-    )
-  }
-
-  const withOverpay = leaderboard.filter(
-    (model) => isCapable(model) && model.overpay != null
-  )
-  if (withOverpay.length > 0) {
-    return (
-      withOverpay
-        .toSorted((left, right) => {
-          const overpayDelta = (right.overpay ?? 0) - (left.overpay ?? 0)
-          if (overpayDelta !== 0) {
-            return overpayDelta
-          }
-          return right.spendShare - left.spendShare
-        })
-        .at(0) ?? null
-    )
-  }
-
   return (
-    leaderboard
-      .filter((model) => isCapable(model) && model.spendShare > 0)
+    usable
+      .filter((model) => model.spendShare > 0)
       .toSorted((left, right) => right.spendShare - left.spendShare)
       .at(0) ?? null
   )
@@ -830,16 +983,20 @@ export function pickFrontier(leaderboard: RankedModel[]): RankedModel | null {
 
 export function pickBangForBuck(models: RankedModel[]): RankedModel | null {
   // The floor applies to the value run's own score, so the ratio and the
-  // quality gate describe the same execution.
+  // quality gate describe the same execution. Adopted models win the
+  // homepage slot when any qualify, so a 0-token catalog row cannot.
   const qualifying = models.filter(
     (model) =>
       model.deepsecValue?.bang != null &&
       model.deepsecValue.score >= MIN_DEEPSEC_SCORE
   )
-  const pool =
-    qualifying.length > 0
-      ? qualifying
-      : models.filter((model) => model.deepsecValue?.bang != null)
+  const withBang = models.filter((model) => model.deepsecValue?.bang != null)
+  const pool = firstWhere([
+    qualifying.filter(hasAdoption),
+    qualifying,
+    withBang.filter(hasAdoption),
+    withBang,
+  ])
   return (
     pool
       .toSorted((left, right) => {
@@ -856,22 +1013,83 @@ export function pickBangForBuck(models: RankedModel[]): RankedModel | null {
   )
 }
 
+export type RisingOptions = {
+  exclude?: Iterable<RankedModel | string | null | undefined>
+  priorTokens?: Map<string, number> | Record<string, number>
+}
+
+function priorTokenShare(
+  priorTokens: RisingOptions["priorTokens"],
+  id: string
+): number | undefined {
+  if (priorTokens == null) {
+    return undefined
+  }
+  if (priorTokens instanceof Map) {
+    return priorTokens.get(id)
+  }
+  return priorTokens[id]
+}
+
+function excludedFamilies(
+  exclude: RisingOptions["exclude"]
+): Set<string> {
+  const families = new Set<string>()
+  if (exclude == null) {
+    return families
+  }
+  for (const item of exclude) {
+    if (item == null) {
+      continue
+    }
+    const id = typeof item === "string" ? item : item.id
+    families.add(modelFamily(id))
+  }
+  return families
+}
+
 /**
- * Rising = the adopted capable model DeepsecBench has not caught yet.
- * Surfaces newcomers on real usage instead of leaving them out of the story
- * until a benchmark run lands. Self-retires as bench coverage grows.
+ * Rising = the leftover capable model at a usable price. AA first, so a
+ * high-quality catalog row the other roles missed (Grok vs Sol) can
+ * surface. Sibling SKUs of models that already hold a pick are skipped.
+ * When nobody leftover has AA, fall back to unbenchmarked adoption and
+ * week-over-week token-share growth.
  */
-export function pickRising(models: RankedModel[]): RankedModel | null {
+export function pickRising(
+  models: RankedModel[],
+  options: RisingOptions = {}
+): RankedModel | null {
+  const taken = excludedFamilies(options.exclude)
+  const leftover = models.filter(
+    (model) =>
+      isCapable(model) &&
+      inUsableBand(model) &&
+      !taken.has(modelFamily(model.id))
+  )
+  const withAa = leftover.filter((model) => model.aa?.intelligence != null)
+  if (withAa.length > 0) {
+    return withAa.toSorted(byUsableQuality).at(0) ?? null
+  }
+
+  const prior = options.priorTokens
+  const hasPrior =
+    prior != null &&
+    (prior instanceof Map ? prior.size > 0 : Object.keys(prior).length > 0)
+  const unbenched = leftover.filter(
+    (model) => hasAdoption(model) && model.deepsecBest == null
+  )
   return (
-    models
-      .filter(
-        (model) =>
-          isCapable(model) &&
-          hasAdoption(model) &&
-          model.deepsecBest == null &&
-          (effectiveBlend(model) ?? Number.POSITIVE_INFINITY) <= MID_BLEND_USD
-      )
+    unbenched
       .toSorted((left, right) => {
+        if (hasPrior) {
+          const leftGrowth =
+            left.tokensShare - (priorTokenShare(prior, left.id) ?? 0)
+          const rightGrowth =
+            right.tokensShare - (priorTokenShare(prior, right.id) ?? 0)
+          if (rightGrowth !== leftGrowth) {
+            return rightGrowth - leftGrowth
+          }
+        }
         if (right.tokensShare !== left.tokensShare) {
           return right.tokensShare - left.tokensShare
         }
@@ -901,6 +1119,29 @@ export function byTokenShare(left: RankedModel, right: RankedModel): number {
 
 export function bySpendShare(left: RankedModel, right: RankedModel): number {
   return right.spendShare - left.spendShare
+}
+
+export function byAaIntelligence(
+  left: RankedModel,
+  right: RankedModel
+): number {
+  const intelDelta =
+    (right.aa?.intelligence ?? Number.NEGATIVE_INFINITY) -
+    (left.aa?.intelligence ?? Number.NEGATIVE_INFINITY)
+  if (intelDelta !== 0) {
+    return intelDelta
+  }
+  return (right.aa?.coding ?? 0) - (left.aa?.coding ?? 0)
+}
+
+export function byAaCoding(left: RankedModel, right: RankedModel): number {
+  const codingDelta =
+    (right.aa?.coding ?? Number.NEGATIVE_INFINITY) -
+    (left.aa?.coding ?? Number.NEGATIVE_INFINITY)
+  if (codingDelta !== 0) {
+    return codingDelta
+  }
+  return (right.aa?.intelligence ?? 0) - (left.aa?.intelligence ?? 0)
 }
 
 export function byDeepsecBang(left: RankedModel, right: RankedModel): number {

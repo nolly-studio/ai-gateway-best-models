@@ -11,9 +11,11 @@
  *   Models        https://vercel.com/api/ai/leaderboard-export?dataset=models&modality=text
  *   Labs          https://vercel.com/api/ai/leaderboard-export?dataset=labs&modality=text
  *   DeepsecBench  https://vercel.com/ai-gateway/leaderboards/deepsecbench/results.json
- *   AA indices    https://openrouter.ai/api/v1/models (fallback: /benchmarks)
+ *   AA indices    https://artificialanalysis.ai/api/v2/language/models/free
+ *                 (OpenRouter fallback)
  *   License       CC BY 4.0 — © 2026 Vercel, AI Gateway Leaderboard Data
- *                 Artificial Analysis via OpenRouter, CC BY 4.0
+ *                 Artificial Analysis Free API, CC BY 4.0
+ *                 (OpenRouter fallback when the AA key is missing)
  */
 
 import { mkdir, writeFile } from "node:fs/promises"
@@ -21,8 +23,10 @@ import { dirname, join } from "node:path"
 
 import {
   HISTORY_RELATIVE_PATH,
+  priorWeekTokenShares,
   SNAPSHOT_RELATIVE_PATH,
   toHistoryWeek,
+  tokenSharesFromModels,
   upsertHistory,
   weekSnapshotRelativePath,
   type GatewaySnapshot,
@@ -40,17 +44,18 @@ import {
   fetchOfficialPromos,
 } from "./fetch"
 import {
+  aaCreatorPrefix,
   attachAa,
   attachDeepsec,
   attachEndpoints,
   attachPromo,
   averageAdoption,
-  canonicalOpenRouterId,
   CHEAP_BLEND_USD,
   hasPrivacy,
   hasZdr,
   indexCatalog,
   lookbackWindow,
+  matchAaRecord,
   matchCatalog,
   matchModelId,
   MIN_DEEPSEC_SCORE,
@@ -63,13 +68,20 @@ import {
   rankFromCatalog,
   uniqueSortedDates,
   type AaIndices,
+  type AaRecord,
   type Adoption,
   type DeepsecRow,
   type EndpointQuote,
   type OfficialPromo,
   type RankedModel,
 } from "./rank"
-import { buildLists, buildSnapshot, type RankedPicks } from "./snapshot"
+import {
+  buildLabBang,
+  buildLists,
+  buildSnapshot,
+  listLabNames,
+  type RankedPicks,
+} from "./snapshot"
 
 function money(value: number | null): string {
   return value == null ? "n/a" : `$${value.toFixed(3)}`
@@ -151,19 +163,25 @@ function deepsecByCatalogId(
 }
 
 function aaByCatalogId(
-  rows: Map<string, AaIndices>,
+  rows: AaRecord[],
   index: ReturnType<typeof indexCatalog>
-): { byId: Map<string, AaIndices>; unmatched: string[] } {
-  const byId = new Map<string, AaIndices>()
+): { byId: Map<string, AaRecord["indices"]>; unmatched: string[] } {
+  const byId = new Map<string, AaRecord["indices"]>()
   const unmatched: string[] = []
-  for (const [id, indices] of rows) {
-    const model = matchModelId(id, index)
+  for (const record of rows) {
+    const model = matchAaRecord(record, index)
     if (!model) {
-      unmatched.push(canonicalOpenRouterId(id))
+      if (record.source === "openrouter") {
+        unmatched.push(
+          record.creator == null
+            ? record.slug
+            : `${aaCreatorPrefix(record.creator) ?? record.creator}/${record.slug}`
+        )
+      }
       continue
     }
     if (!byId.has(model.id)) {
-      byId.set(model.id, indices)
+      byId.set(model.id, record.indices)
     }
   }
   return { byId, unmatched }
@@ -187,7 +205,10 @@ function enrich(
   return attachPromo(withEndpoints, promos.get(model.id))
 }
 
-export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
+export async function buildGatewaySnapshot(): Promise<{
+  snapshot: GatewaySnapshot
+  tokenShares: Record<string, number>
+}> {
   const [catalog, rows, labRows, deepsecRows, aaRows, promos] =
     await Promise.all([
       fetchCatalog(),
@@ -200,6 +221,8 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
 
   const dates = uniqueSortedDates(rows)
   const { from, to, window } = lookbackWindow(dates)
+  const history = await readHistory()
+  const priorTokens = priorWeekTokenShares(history, to)
   const index = indexCatalog(catalog)
   const adoption = averageAdoption(rows, window)
   const labs = averageAdoption(
@@ -240,40 +263,53 @@ export async function buildGatewaySnapshot(): Promise<GatewaySnapshot> {
     (row) => matchModelId(row.id, index) == null
   )
 
-  return buildSnapshot({
-    window: { from, to },
-    languageModels: catalog.length,
-    zdrModels: catalogBase.filter(hasZdr).length,
-    privacyModels: privacyRanked.length,
-    deepsecRuns: deepsecRows.length,
-    aaModels: aa.size,
-    picks: {
-      privacy: picksFrom(privacyRanked, privacyLeaderboard),
-      open: picksFrom(openRanked, openLeaderboard),
-    },
-    lists: {
-      privacy: buildLists(privacyRanked, privacyLeaderboard),
-      open: buildLists(openRanked, openLeaderboard),
-    },
-    labs,
-    unmatched: {
-      leaderboard: unmatched.map((model) => model.boardName),
-      deepsec: [
-        ...new Set(unmatchedDeepsec.map((row) => `${row.id} (${row.effort})`)),
-      ],
-      aa: [...new Set(unmatchedAa)],
-    },
-  })
+  return {
+    snapshot: buildSnapshot({
+      window: { from, to },
+      languageModels: catalog.length,
+      zdrModels: catalogBase.filter(hasZdr).length,
+      privacyModels: privacyRanked.length,
+      deepsecRuns: deepsecRows.length,
+      aaModels: aa.size,
+      picks: {
+        privacy: picksFrom(privacyRanked, priorTokens),
+        open: picksFrom(openRanked, priorTokens),
+      },
+      lists: {
+        privacy: buildLists(privacyRanked, privacyLeaderboard),
+        open: buildLists(openRanked, openLeaderboard),
+      },
+      labs,
+      labBang: {
+        privacy: buildLabBang(privacyRanked, listLabNames(labs)),
+        open: buildLabBang(openRanked, listLabNames(labs)),
+      },
+      unmatched: {
+        leaderboard: unmatched.map((model) => model.boardName),
+        deepsec: [
+          ...new Set(unmatchedDeepsec.map((row) => `${row.id} (${row.effort})`)),
+        ],
+        aa: [...new Set(unmatchedAa)],
+      },
+    }),
+    tokenShares: tokenSharesFromModels(openRanked),
+  }
 }
 
-async function writeSnapshot(snapshot: GatewaySnapshot): Promise<string[]> {
+async function writeSnapshot(
+  snapshot: GatewaySnapshot,
+  tokenShares: Record<string, number>
+): Promise<string[]> {
   const latestPath = join(process.cwd(), SNAPSHOT_RELATIVE_PATH)
   const weekPath = join(
     process.cwd(),
     weekSnapshotRelativePath(snapshot.window.to)
   )
   const historyPath = join(process.cwd(), HISTORY_RELATIVE_PATH)
-  const history = upsertHistory(await readHistory(), toHistoryWeek(snapshot))
+  const history = upsertHistory(
+    await readHistory(),
+    toHistoryWeek(snapshot, tokenShares)
+  )
   const body = `${JSON.stringify(snapshot, null, 2)}\n`
 
   await mkdir(dirname(weekPath), { recursive: true })
@@ -285,14 +321,21 @@ async function writeSnapshot(snapshot: GatewaySnapshot): Promise<string[]> {
 
 function picksFrom(
   ranked: RankedModel[],
-  leaderboard: RankedModel[]
+  priorTokens?: Record<string, number>
 ): RankedPicks {
+  const bangForBuck = pickBangForBuck(ranked)
+  const workhorse = pickDefaultWorkhorse(ranked)
+  const cheapRouter = pickCheapRouter(ranked)
+  const frontier = pickFrontier(ranked)
   return {
-    bangForBuck: pickBangForBuck(ranked),
-    workhorse: pickDefaultWorkhorse(leaderboard),
-    cheapRouter: pickCheapRouter(ranked),
-    frontier: pickFrontier(leaderboard),
-    rising: pickRising(ranked),
+    bangForBuck,
+    workhorse,
+    cheapRouter,
+    frontier,
+    rising: pickRising(ranked, {
+      exclude: [bangForBuck, workhorse, cheapRouter, frontier],
+      priorTokens,
+    }),
   }
 }
 
@@ -337,6 +380,14 @@ function laneListLabel(lane: SnapshotLaneKey): string {
 function printLaneLists(lane: SnapshotLaneKey, lists: SnapshotLists) {
   const label = laneListLabel(lane)
   section(
+    `Artificial Analysis intelligence (${label})`,
+    lists.aaIntelligence.map(asRankedLine)
+  )
+  section(
+    `Artificial Analysis coding (${label})`,
+    lists.aaCoding.map(asRankedLine)
+  )
+  section(
     `DeepsecBench bang-for-buck (${label}, score ≥ floor)`,
     lists.deepsecBang.map(asRankedLine)
   )
@@ -367,7 +418,7 @@ function printReport(snapshot: GatewaySnapshot) {
     `DeepsecBench ${stats.deepsecRuns} runs  ·  bang = score / run $  ·  floor score ≥ ${MIN_DEEPSEC_SCORE}`
   )
   console.log(
-    `Artificial Analysis ${stats.aaModels} models  ·  frontier fallback only  ·  card footnote`
+    `Artificial Analysis ${stats.aaModels} models  ·  frontier ranks on AA intel  ·  Deepsec is bang`
   )
   console.log(
     "ZDR+NPT = catalog all|some  ·  discount = official models-page list vs sale"
@@ -442,8 +493,8 @@ function asRankedLine(
 }
 
 async function main() {
-  const snapshot = await buildGatewaySnapshot()
-  const paths = await writeSnapshot(snapshot)
+  const { snapshot, tokenShares } = await buildGatewaySnapshot()
+  const paths = await writeSnapshot(snapshot, tokenShares)
   printReport(snapshot)
   console.log(`\nWrote ${paths.join("\n      ")}`)
 }

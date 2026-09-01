@@ -298,9 +298,26 @@ export function ledgerBangMetric(model: SnapshotModel): LedgerMetric {
   return { value: score(null), note: null }
 }
 
+export function ledgerIntelMetric(model: SnapshotModel): LedgerMetric {
+  const intelligence = model.aa?.intelligence
+  if (intelligence != null) {
+    return { value: score(intelligence), note: "AA" }
+  }
+  return { value: score(null), note: null }
+}
+
+export function ledgerCodingMetric(model: SnapshotModel): LedgerMetric {
+  const coding = model.aa?.coding
+  if (coding != null) {
+    return { value: score(coding), note: "AA" }
+  }
+  return { value: score(null), note: null }
+}
+
 /**
- * Role-aware card metrics. Deepsec numbers stay attached to the run they
- * came from; AA is a footnote and never stands in for a Deepsec score.
+ * Role-aware card metrics. Frontier leads with AA intelligence. Deepsec
+ * numbers stay attached to the run they came from and are never mixed
+ * with AA.
  */
 export function pickMetrics(
   model: SnapshotModel,
@@ -312,6 +329,7 @@ export function pickMetrics(
   const value = model.deepsecValue
   const everyday = model.deepsecEveryday
   const metrics: PickMetric[] = []
+  const aa = aaMetric(model.aa)
 
   const policy = showPolicy ? differingPolicyLabel(model) : null
   if (policy != null) {
@@ -322,12 +340,22 @@ export function pickMetrics(
     })
   }
 
-  if (keys.has("frontier") && best != null) {
-    metrics.push({
-      kind: "best",
-      value: score(best.score),
-      hint: `Best Deepsec score at ${best.effort} effort.`,
-    })
+  if (keys.has("frontier") || keys.has("rising")) {
+    if (aa != null) {
+      metrics.push(aa)
+    } else if (best != null) {
+      metrics.push({
+        kind: "best",
+        value: score(best.score),
+        hint: `Best Deepsec score at ${best.effort} effort.`,
+      })
+    } else {
+      metrics.push({
+        kind: "missing",
+        value: "—",
+        hint: "No Artificial Analysis or DeepsecBench score for this model yet.",
+      })
+    }
   }
 
   if (keys.has("bangForBuck") && value?.bang != null) {
@@ -342,6 +370,7 @@ export function pickMetrics(
     const sameAsBest =
       keys.has("frontier") &&
       best != null &&
+      aa == null &&
       best.score === everyday.score &&
       best.effort === everyday.effort
     if (!sameAsBest) {
@@ -353,17 +382,6 @@ export function pickMetrics(
     }
   }
 
-  if (
-    ((keys.has("frontier") && best == null) ||
-      (keys.has("rising") && best == null))
-  ) {
-    metrics.push({
-      kind: "missing",
-      value: "—",
-      hint: "DeepsecBench has not benchmarked this model yet.",
-    })
-  }
-
   if (model.tokensShare > 0) {
     metrics.push({
       kind: "tokens",
@@ -372,8 +390,7 @@ export function pickMetrics(
     })
   }
 
-  const aa = aaMetric(model.aa)
-  if (aa != null) {
+  if (aa != null && !keys.has("frontier") && !keys.has("rising")) {
     metrics.push(aa)
   }
 

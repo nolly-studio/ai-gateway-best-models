@@ -1,5 +1,6 @@
-export const SNAPSHOT_SCHEMA_VERSION = 4
-export const HISTORY_SCHEMA_VERSION = 3
+export const SNAPSHOT_SCHEMA_VERSION = 6
+export const SNAPSHOT_LIST_LIMIT = 20
+export const HISTORY_SCHEMA_VERSION = 4
 export const SNAPSHOT_RELATIVE_PATH = "public/data/gateway.json"
 export const HISTORY_RELATIVE_PATH = "public/data/history.json"
 export const WEEKS_RELATIVE_DIR = "public/data/weeks"
@@ -34,11 +35,13 @@ export const LABS_LEADERBOARD_URL =
   "https://vercel.com/api/ai/leaderboard-export?dataset=labs&modality=text"
 export const DEEPSEC_RESULTS_URL =
   "https://vercel.com/ai-gateway/leaderboards/deepsecbench/results.json"
+export const AA_API_URL =
+  "https://artificialanalysis.ai/api/v2/language/models/free"
 export const AA_BENCHMARKS_URL =
   "https://openrouter.ai/api/v1/benchmarks?source=artificial-analysis&max_results=100"
 export const AA_MODELS_URL = "https://openrouter.ai/api/v1/models"
 export const AA_ATTRIBUTION =
-  "Intelligence, coding, and agentic indices: Artificial Analysis via OpenRouter, CC BY 4.0."
+  "Intelligence, coding, and agentic indices: Artificial Analysis, CC BY 4.0. OpenRouter is the fallback when the AA key is missing."
 
 export const ATTRIBUTION_TEXT =
   "© 2026 Vercel. AI Gateway Leaderboard Data is licensed under CC BY 4.0."
@@ -93,7 +96,7 @@ export type SnapshotModel = {
   deepsecValue: SnapshotDeepsecRun | null
   /** Lowest published effort run (workhorse's everyday quality number). */
   deepsecEveryday: SnapshotDeepsecRun | null
-  /** Artificial Analysis indices. Shown as a footnote; never mixed with Deepsec. */
+  /** Artificial Analysis indices. Frontier ranks on intelligence; never mixed with Deepsec. */
   aa: SnapshotAaIndices | null
 }
 
@@ -103,11 +106,22 @@ export type SnapshotAaIndices = {
   agentic: number | null
 }
 
+export type SnapshotLabBang = Record<SnapshotLaneKey, SnapshotModel[]>
+
 export type SnapshotLab = {
   name: string
   requestsShare: number
   tokensShare: number
   spendShare: number
+  /** Capable Deepsec value-runs for this lab, unsliced, per lane. */
+  bang: SnapshotLabBang
+}
+
+export function emptyLabBang(): SnapshotLabBang {
+  return {
+    privacy: [],
+    open: [],
+  }
 }
 
 export type SnapshotPickKey =
@@ -122,6 +136,8 @@ export type SnapshotLaneKey = (typeof SNAPSHOT_LANE_KEYS)[number]
 export type SnapshotPicks = Record<SnapshotPickKey, SnapshotModel | null>
 
 export type SnapshotLists = {
+  aaIntelligence: SnapshotModel[]
+  aaCoding: SnapshotModel[]
   deepsecBang: SnapshotModel[]
   deepsecScore: SnapshotModel[]
   discounted: SnapshotModel[]
@@ -191,6 +207,8 @@ export type HistoryWeek = {
   stats: GatewaySnapshot["stats"]
   picks: Record<SnapshotLaneKey, HistoryLanePicks>
   pickMetrics: Record<SnapshotLaneKey, HistoryLaneMetrics>
+  /** Catalog ids → 7-day token share, used for rising week-over-week growth. */
+  tokenShares?: Record<string, number>
 }
 
 export type GatewayHistory = {
@@ -224,7 +242,35 @@ export function emptyHistoryLanePicks(): HistoryLanePicks {
   }
 }
 
-export function toHistoryWeek(snapshot: GatewaySnapshot): HistoryWeek {
+export function tokenSharesFromModels(
+  models: Iterable<{ id: string; tokensShare: number }>
+): Record<string, number> {
+  const shares: Record<string, number> = {}
+  for (const model of models) {
+    if (model.tokensShare > 0) {
+      shares[model.id] = model.tokensShare
+    }
+  }
+  return shares
+}
+
+export function priorWeekTokenShares(
+  history: GatewayHistory,
+  beforeWeek: string
+): Record<string, number> | undefined {
+  const prior = history.weeks
+    .filter((week) => week.week < beforeWeek && week.tokenShares != null)
+    .at(-1)
+  if (prior?.tokenShares == null || Object.keys(prior.tokenShares).length === 0) {
+    return undefined
+  }
+  return prior.tokenShares
+}
+
+export function toHistoryWeek(
+  snapshot: GatewaySnapshot,
+  tokenShares?: Record<string, number>
+): HistoryWeek {
   const picks = {} as Record<SnapshotLaneKey, HistoryLanePicks>
   const pickMetrics = {} as Record<SnapshotLaneKey, HistoryLaneMetrics>
 
@@ -250,6 +296,9 @@ export function toHistoryWeek(snapshot: GatewaySnapshot): HistoryWeek {
     stats: snapshot.stats,
     picks,
     pickMetrics,
+    ...(tokenShares != null && Object.keys(tokenShares).length > 0
+      ? { tokenShares }
+      : {}),
   }
 }
 
