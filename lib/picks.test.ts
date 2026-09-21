@@ -92,7 +92,12 @@ describe("groupPicks", () => {
       "Same winners this week. Nothing that trains or skips ZDR beat the picks above."
     )
     expect(weeklyPicksTitle()).toBe("This week's picks")
+    expect(weeklyPicksTitle("day")).toBe("Today's picks")
     expect(weeklyPicksHint()).toContain("ZDR is the priced route")
+    expect(laneHeading("privacy", "day")).toBe(
+      "Best ZDR + no-training models today"
+    )
+    expect(sameLaneNote("day")).toContain("Same winners today")
     expect(policyLabel({ zdr: "some", noTraining: "all" })).toBe(
       "ZDR + no training"
     )

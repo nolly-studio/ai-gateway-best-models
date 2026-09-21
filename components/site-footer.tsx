@@ -4,15 +4,15 @@ import { weekPagePath } from "@/lib/gateway-snapshot"
 
 export function SiteFooter({
   attribution,
-  week,
+  archiveWeek,
 }: {
   attribution: GatewaySnapshot["attribution"]
-  week?: string
+  archiveWeek?: string
 }) {
   return (
     <footer className="flex flex-col gap-2 border-t border-line pt-4 text-[12px] leading-relaxed text-ink-3">
       <p className="text-pretty">
-        Independent weekly ranking. Not affiliated with Vercel.{" "}
+        Independent ranking (daily + weekly). Not affiliated with Vercel.{" "}
         {attribution.text}{" "}
         <TextLink external href={attribution.licenseUrl}>
           License
@@ -20,13 +20,17 @@ export function SiteFooter({
         {" · "}
         <TextLink href="/methodology">Methodology</TextLink>
         {" · "}
-        <TextLink href="/data/gateway.json">JSON</TextLink>
+        <TextLink href="/data/gateway.json">Today JSON</TextLink>
+        {" · "}
+        <TextLink href="/data/weekly.json">Week JSON</TextLink>
         {" · "}
         <TextLink href="/data/history.json">History</TextLink>
-        {week ? (
+        {" · "}
+        <TextLink href="/week">This week</TextLink>
+        {archiveWeek ? (
           <>
             {" · "}
-            <TextLink href={weekPagePath(week)}>This week</TextLink>
+            <TextLink href={weekPagePath(archiveWeek)}>Archive</TextLink>
           </>
         ) : null}
       </p>

@@ -1,9 +1,13 @@
-export const SNAPSHOT_SCHEMA_VERSION = 6
+export const SNAPSHOT_SCHEMA_VERSION = 7
 export const SNAPSHOT_LIST_LIMIT = 20
 export const HISTORY_SCHEMA_VERSION = 4
 export const SNAPSHOT_RELATIVE_PATH = "public/data/gateway.json"
+export const WEEKLY_RELATIVE_PATH = "public/data/weekly.json"
 export const HISTORY_RELATIVE_PATH = "public/data/history.json"
 export const WEEKS_RELATIVE_DIR = "public/data/weeks"
+export const SNAPSHOT_MOVER_LIMIT = 5
+
+export type SnapshotCadence = "day" | "week"
 
 export const SNAPSHOT_LANE_KEYS = ["privacy", "open"] as const
 
@@ -153,8 +157,29 @@ export type SnapshotAnalysis = {
   pickNotes: Partial<Record<SnapshotPickKey, string>>
 }
 
+export type SnapshotPickDiff = {
+  from: string | null
+  to: string | null
+}
+
+export type SnapshotMover = {
+  id: string
+  name: string
+  dayShare: number
+  weekShare: number
+  delta: number
+}
+
+export type SnapshotDelta = {
+  vsWeek: Partial<
+    Record<SnapshotLaneKey, Partial<Record<SnapshotPickKey, SnapshotPickDiff>>>
+  >
+  movers: SnapshotMover[]
+}
+
 export type GatewaySnapshot = {
   schemaVersion: typeof SNAPSHOT_SCHEMA_VERSION
+  cadence: SnapshotCadence
   generatedAt: string
   window: { from: string; to: string; lookbackDays: number }
   sources: {
@@ -185,6 +210,7 @@ export type GatewaySnapshot = {
     aa: string[]
   }
   analysis: SnapshotAnalysis | null
+  delta?: SnapshotDelta
 }
 
 export type HistoryPickMetrics = {
@@ -315,4 +341,71 @@ export function upsertHistory(
     schemaVersion: HISTORY_SCHEMA_VERSION,
     weeks,
   }
+}
+
+const MS_PER_DAY = 86_400_000
+
+export function daysBetween(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    return 0
+  }
+  return (end - start) / MS_PER_DAY
+}
+
+export function shouldWriteWeekArchive(
+  history: GatewayHistory,
+  weeklyTo: string
+): boolean {
+  const last = history.weeks.at(-1)
+  if (last == null || last.week === "") {
+    return true
+  }
+  return daysBetween(last.week, weeklyTo) >= 7
+}
+
+export function pickIdDiffs(
+  daily: SnapshotPicks,
+  weekly: SnapshotPicks
+): Partial<Record<SnapshotPickKey, SnapshotPickDiff>> {
+  const diffs: Partial<Record<SnapshotPickKey, SnapshotPickDiff>> = {}
+  for (const key of SNAPSHOT_PICK_KEYS) {
+    const from = weekly[key]?.id ?? null
+    const to = daily[key]?.id ?? null
+    if (from !== to) {
+      diffs[key] = { from, to }
+    }
+  }
+  return diffs
+}
+
+export function featuredPickIds(
+  picks: GatewaySnapshot["picks"]
+): Set<string> {
+  const ids = new Set<string>()
+  for (const lane of SNAPSHOT_LANE_KEYS) {
+    for (const key of SNAPSHOT_PICK_KEYS) {
+      const id = picks[lane][key]?.id
+      if (id != null) {
+        ids.add(id)
+      }
+    }
+  }
+  return ids
+}
+
+export function buildSnapshotDelta(
+  daily: GatewaySnapshot,
+  weekly: GatewaySnapshot,
+  movers: SnapshotMover[]
+): SnapshotDelta {
+  const vsWeek: SnapshotDelta["vsWeek"] = {}
+  for (const lane of SNAPSHOT_LANE_KEYS) {
+    const diffs = pickIdDiffs(daily.picks[lane], weekly.picks[lane])
+    if (Object.keys(diffs).length > 0) {
+      vsWeek[lane] = diffs
+    }
+  }
+  return { vsWeek, movers }
 }

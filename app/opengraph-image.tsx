@@ -5,7 +5,7 @@ import {
 } from "@/lib/og-image"
 import { readSnapshot } from "@/lib/read-snapshot"
 
-export const alt = "This week's best AI Gateway models on bestmodels.dev"
+export const alt = "Today's best AI Gateway models on bestmodels.dev"
 export const size = ogSize
 export const contentType = ogContentType
 

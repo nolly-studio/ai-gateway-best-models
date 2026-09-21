@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { blendOf, money } from "@/lib/format"
+import type { SnapshotCadence } from "@/lib/gateway-snapshot"
 import {
   pickMetrics,
   routePolicyBadge,
@@ -51,10 +52,12 @@ export function PickCards({
   title,
   hint,
   picks,
+  cadence = "week",
 }: {
   title: string
   hint?: string
   picks: FeaturedPick[]
+  cadence?: SnapshotCadence
 }) {
   return (
     <section className="flex flex-col gap-2">
@@ -72,7 +75,7 @@ export function PickCards({
         ) : null}
       </div>
       {picks.map((pick) => (
-        <PickCard key={pick.model.id} pick={pick} />
+        <PickCard cadence={cadence} key={pick.model.id} pick={pick} />
       ))}
     </section>
   )
@@ -142,11 +145,17 @@ function MetricPill({ metric }: { metric: PickMetric }) {
   )
 }
 
-function PickCard({ pick }: { pick: FeaturedPick }) {
+function PickCard({
+  pick,
+  cadence = "week",
+}: {
+  pick: FeaturedPick
+  cadence?: SnapshotCadence
+}) {
   const { model, roles, privacyModel } = pick
   const { status, copy } = useCopyText()
   const blend = blendOf(model)
-  const metrics = pickMetrics(model, roles)
+  const metrics = pickMetrics(model, roles, false, cadence)
   const policy = routePolicyBadge(model, privacyModel)
   const zdrAlt = zdrAltRoute(model, privacyModel)
   const discount =

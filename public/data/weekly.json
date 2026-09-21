@@ -2,9 +2,9 @@
   "schemaVersion": 7,
   "generatedAt": "2026-09-21T12:28:04.514Z",
   "window": {
-    "from": "2026-09-21",
+    "from": "2026-09-15",
     "to": "2026-09-21",
-    "lookbackDays": 1
+    "lookbackDays": 7
   },
   "sources": {
     "catalog": "https://ai-gateway.vercel.sh/v1/models",
@@ -13570,5 +13570,5 @@
     ]
   },
   "analysis": null,
-  "cadence": "day"
+  "cadence": "week"
 }

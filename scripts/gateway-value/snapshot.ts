@@ -1,6 +1,7 @@
 import {
   AA_API_URL,
   SNAPSHOT_LIST_LIMIT,
+  SNAPSHOT_MOVER_LIMIT,
   ATTRIBUTION_LICENSE,
   ATTRIBUTION_LICENSE_URL,
   ATTRIBUTION_TEXT,
@@ -10,10 +11,13 @@ import {
   MODELS_LEADERBOARD_URL,
   SNAPSHOT_SCHEMA_VERSION,
   type GatewaySnapshot,
+  type SnapshotCadence,
+  type SnapshotDelta,
   type SnapshotLab,
   type SnapshotLaneKey,
   type SnapshotLists,
   type SnapshotModel,
+  type SnapshotMover,
   type SnapshotPicks,
   type SnapshotZdr,
 } from "../../lib/gateway-snapshot"
@@ -58,6 +62,7 @@ export type RankedLists = {
 
 export type SnapshotInput = {
   generatedAt?: string
+  cadence: SnapshotCadence
   window: { from: string; to: string }
   languageModels: number
   zdrModels: number
@@ -79,6 +84,7 @@ export type SnapshotInput = {
     deepsec: string[]
     aa: string[]
   }
+  delta?: SnapshotDelta
 }
 
 function modelHref(id: string): string {
@@ -263,14 +269,54 @@ export function toSnapshotLists(lists: RankedLists): SnapshotLists {
   }
 }
 
+export function snapshotMovers(
+  models: RankedModel[],
+  excludeIds: Iterable<string>,
+  limit = SNAPSHOT_MOVER_LIMIT
+): SnapshotMover[] {
+  const excluded = new Set(excludeIds)
+  return models
+    .filter(
+      (model) =>
+        !model.unmatched &&
+        !excluded.has(model.id) &&
+        model.weekShares != null
+    )
+    .map((model) => ({
+      id: model.id,
+      name: model.name,
+      dayShare: model.tokensShare,
+      weekShare: model.weekShares?.tokens ?? 0,
+      delta: model.tokensShare - (model.weekShares?.tokens ?? 0),
+    }))
+    .filter((mover) => mover.delta !== 0)
+    .toSorted((left, right) => right.delta - left.delta)
+    .slice(0, limit)
+}
+
+export function weekTokenSharesFromModels(
+  models: Iterable<RankedModel>
+): Record<string, number> {
+  const shares: Record<string, number> = {}
+  for (const model of models) {
+    const tokens = model.weekShares?.tokens ?? 0
+    if (tokens > 0) {
+      shares[model.id] = tokens
+    }
+  }
+  return shares
+}
+
 export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
+  const lookbackDays = input.cadence === "day" ? 1 : LOOKBACK_DAYS
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    cadence: input.cadence,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     window: {
       from: input.window.from,
       to: input.window.to,
-      lookbackDays: LOOKBACK_DAYS,
+      lookbackDays,
     },
     sources: {
       catalog: CATALOG_URL,
@@ -302,5 +348,6 @@ export function buildSnapshot(input: SnapshotInput): GatewaySnapshot {
     labs: toSnapshotLabs(input.labs, input.labBang),
     unmatched: input.unmatched,
     analysis: null,
+    ...(input.delta != null ? { delta: input.delta } : {}),
   }
 }

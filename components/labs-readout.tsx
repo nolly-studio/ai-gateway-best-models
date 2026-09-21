@@ -8,7 +8,12 @@ import {
 } from "@/components/ledger-row"
 import { ProviderIcon } from "@/components/provider-icon"
 import { pct } from "@/lib/format"
-import type { SnapshotLab, SnapshotLaneKey } from "@/lib/gateway-snapshot"
+import type {
+  SnapshotCadence,
+  SnapshotLab,
+  SnapshotLaneKey,
+} from "@/lib/gateway-snapshot"
+import { emptyLabsNote } from "@/lib/picks"
 import { cn } from "@/lib/utils"
 
 const LANES: { key: SnapshotLaneKey; label: string }[] = [
@@ -16,7 +21,13 @@ const LANES: { key: SnapshotLaneKey; label: string }[] = [
   { key: "open", label: "All" },
 ]
 
-export function LabsReadout({ labs }: { labs: SnapshotLab[] }) {
+export function LabsReadout({
+  cadence = "week",
+  labs,
+}: {
+  cadence?: SnapshotCadence
+  labs: SnapshotLab[]
+}) {
   const [lane, setLane] = useState<SnapshotLaneKey>("privacy")
   const [selected, setSelected] = useState(labs[0]?.name ?? null)
   const maxTokens = Math.max(...labs.map((lab) => lab.tokensShare), 1)
@@ -108,7 +119,7 @@ export function LabsReadout({ labs }: { labs: SnapshotLab[] }) {
             <LedgerMetricHeader />
             {rows.length === 0 ? (
               <p className="px-3 py-6 text-[12.5px] text-ink-3">
-                No Deepsec run this week.
+                {emptyLabsNote(cadence)}
               </p>
             ) : (
               rows.map((model) => (

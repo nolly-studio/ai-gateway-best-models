@@ -1,8 +1,8 @@
-name: Weekly gateway refresh
+name: Refresh AI Gateway snapshots
 
 on:
   schedule:
-    - cron: "0 12 * * 1"
+    - cron: "0 12 * * *"
   workflow_dispatch:
 
 jobs:
@@ -18,14 +18,22 @@ jobs:
         env:
           ARTIFICIAL_ANALYSIS_API_KEY: ${{ secrets.ARTIFICIAL_ANALYSIS_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      - name: Commit snapshot archive
+      - name: Archive weekly snapshot or deploy daily
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/gateway.json public/data/history.json public/data/weeks
-          if git diff --cached --quiet; then
-            echo "No snapshot change"
-            exit 0
+          if git status --porcelain -- public/data/history.json public/data/weeks | grep -q .; then
+            git add public/data/gateway.json public/data/weekly.json public/data/history.json public/data/weeks
+            git commit -m "Archive weekly AI Gateway snapshot"
+            git push
+          else
+            echo "No weekly archive; refreshing production via deploy hook"
+            git checkout -- public/data/gateway.json public/data/weekly.json || true
+            if [ -z "$VERCEL_DEPLOY_HOOK_URL" ]; then
+              echo "VERCEL_DEPLOY_HOOK_URL is not set; skip deploy hook"
+              exit 0
+            fi
+            curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL"
           fi
-          git commit -m "Refresh weekly AI Gateway snapshot"
-          git push

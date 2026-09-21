@@ -1,6 +1,7 @@
 import { blendOf, money, pct, score } from "@/lib/format"
 import {
   SNAPSHOT_PICK_KEYS,
+  type SnapshotCadence,
   type SnapshotLaneKey,
   type SnapshotModel,
   type SnapshotPickKey,
@@ -52,10 +53,15 @@ export function laneTitle(lane: SnapshotLaneKey): string {
   }
 }
 
-export function laneHeading(lane: SnapshotLaneKey): string {
+export function laneHeading(
+  lane: SnapshotLaneKey,
+  cadence: SnapshotCadence = "week"
+): string {
   switch (lane) {
     case "privacy":
-      return "Best ZDR + no-training models this week"
+      return cadence === "day"
+        ? "Best ZDR + no-training models today"
+        : "Best ZDR + no-training models this week"
     case "open":
       return "If you skip ZDR"
     default: {
@@ -65,12 +71,17 @@ export function laneHeading(lane: SnapshotLaneKey): string {
   }
 }
 
-export function laneHint(lane: SnapshotLaneKey): string {
+export function laneHint(
+  lane: SnapshotLaneKey,
+  cadence: SnapshotCadence = "week"
+): string {
   switch (lane) {
     case "privacy":
       return "Zero data retention and no training on prompts"
     case "open":
-      return "These beat the ZDR + no-training picks this week"
+      return cadence === "day"
+        ? "These beat the ZDR + no-training picks today"
+        : "These beat the ZDR + no-training picks this week"
     default: {
       const _exhaustive: never = lane
       return _exhaustive
@@ -78,16 +89,32 @@ export function laneHint(lane: SnapshotLaneKey): string {
   }
 }
 
-export function sameLaneNote(): string {
-  return "Same winners this week. Nothing that trains or skips ZDR beat the picks above."
+export function sameLaneNote(cadence: SnapshotCadence = "week"): string {
+  return cadence === "day"
+    ? "Same winners today. Nothing that trains or skips ZDR beat the picks above."
+    : "Same winners this week. Nothing that trains or skips ZDR beat the picks above."
 }
 
-export function weeklyPicksTitle(): string {
-  return "This week's picks"
+export function weeklyPicksTitle(cadence: SnapshotCadence = "week"): string {
+  return cadence === "day" ? "Today's picks" : "This week's picks"
 }
 
-export function weeklyPicksHint(): string {
-  return "Best models on AI Gateway this week. ZDR is the priced route, not the family."
+export function weeklyPicksHint(cadence: SnapshotCadence = "week"): string {
+  return cadence === "day"
+    ? "Best models on AI Gateway as of the last complete export day. ZDR is the priced route, not the family."
+    : "Best models on AI Gateway this week. ZDR is the priced route, not the family."
+}
+
+export function emptyListNote(cadence: SnapshotCadence = "week"): string {
+  return cadence === "day"
+    ? "Nothing in this list this day."
+    : "Nothing in this list this week."
+}
+
+export function emptyLabsNote(cadence: SnapshotCadence = "week"): string {
+  return cadence === "day"
+    ? "No Deepsec run this day."
+    : "No Deepsec run this week."
 }
 
 export function hasPrivacyPolicy(
@@ -322,7 +349,8 @@ export function ledgerCodingMetric(model: SnapshotModel): LedgerMetric {
 export function pickMetrics(
   model: SnapshotModel,
   roles: PickRole[],
-  showPolicy = false
+  showPolicy = false,
+  cadence: SnapshotCadence = "week"
 ): PickMetric[] {
   const keys = new Set(roles.map((role) => role.key))
   const best = model.deepsecBest
@@ -386,7 +414,10 @@ export function pickMetrics(
     metrics.push({
       kind: "tokens",
       value: pct(model.tokensShare),
-      hint: "Share of AI Gateway tokens this week.",
+      hint:
+        cadence === "day"
+          ? "Share of AI Gateway tokens this day."
+          : "Share of AI Gateway tokens this week.",
     })
   }
 

@@ -50,6 +50,7 @@ function snapshot(): GatewaySnapshot {
 
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    cadence: "week",
     generatedAt: "2026-08-31T20:58:47.079Z",
     window: { from: "2026-08-25", to: "2026-08-31", lookbackDays: 7 },
     sources: {
@@ -144,5 +145,19 @@ describe("seo copy", () => {
     expect(siteFaqs(snapshot())[0]?.question).toBe(
       "What is the best AI Gateway model this week?"
     )
+  })
+
+  it("keeps the daily meta description under 170 characters", () => {
+    const daily = snapshot()
+    daily.cadence = "day"
+    daily.window = { from: "2026-09-01", to: "2026-09-01", lookbackDays: 1 }
+    const description = homeDescription(daily)
+    expect(description.length).toBeGreaterThan(130)
+    expect(description.length).toBeLessThan(170)
+    expect(description).toContain("Today")
+    expect(siteFaqs(daily)[0]?.question).toBe(
+      "What is the best AI Gateway model today?"
+    )
+    expect(homeJsonLd(daily)["@graph"].some((node) => node["@id"] === "https://www.bestmodels.dev/#daily-picks")).toBe(true)
   })
 })

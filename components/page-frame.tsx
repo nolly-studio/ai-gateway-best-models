@@ -12,15 +12,24 @@ export function PageFrame({ children }: { children: ReactNode }) {
 const navLinkClass =
   "relative inline-flex items-center text-sm text-ink-3 transition-colors duration-150 select-none after:absolute after:-inset-x-1.5 after:-inset-y-3 after:content-[''] hover:text-ink aria-[current=page]:text-ink";
 
-export function SiteNav({ current }: { current: "picks" | "methodology" }) {
+export type SiteNavCurrent = "today" | "week" | "methodology";
+
+export function SiteNav({ current }: { current: SiteNavCurrent }) {
   return (
     <nav aria-label="Site" className="flex items-center gap-4">
       <Link
-        aria-current={current === "picks" ? "page" : undefined}
+        aria-current={current === "today" ? "page" : undefined}
         className={navLinkClass}
         href="/"
       >
-        Picks
+        Today
+      </Link>
+      <Link
+        aria-current={current === "week" ? "page" : undefined}
+        className={navLinkClass}
+        href="/week"
+      >
+        Week
       </Link>
       <Link
         aria-current={current === "methodology" ? "page" : undefined}
@@ -40,7 +49,7 @@ export function PageHeader({
   title,
 }: {
   children: ReactNode;
-  current: "picks" | "methodology";
+  current: SiteNavCurrent;
   meta: ReactNode;
   title: ReactNode;
 }) {

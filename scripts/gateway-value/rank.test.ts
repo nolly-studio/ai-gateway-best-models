@@ -20,6 +20,8 @@ import {
   everydayDeepsecRun,
   hasNoTraining,
   hasPrivacy,
+  completeExportDay,
+  hasAdoption,
   hasQualityFloor,
   hasZdr,
   indexCatalog,
@@ -37,6 +39,7 @@ import {
   rankFromBoard,
   rankFromCatalog,
   spendOverpay,
+  withGateShares,
   tokenValueScore,
   type DeepsecRow,
   type GatewayModel,
@@ -47,6 +50,7 @@ import {
   buildLabBang,
   buildLists,
   buildSnapshot,
+  snapshotMovers,
   toSnapshotLabs,
 } from "./snapshot"
 
@@ -281,6 +285,30 @@ describe("gateway-value rank", () => {
     expect(from).toBe("2026-08-29")
     expect(window.has("2026-08-01")).toBe(false)
     expect(window.size).toBe(2)
+  })
+
+  it("drops today's UTC date as an in-progress export day", () => {
+    expect(
+      completeExportDay(
+        ["2026-09-19", "2026-09-20", "2026-09-21"],
+        new Date("2026-09-21T12:00:00Z")
+      )
+    ).toBe("2026-09-20")
+  })
+
+  it("keeps yesterday when it is the newest export date", () => {
+    expect(
+      completeExportDay(
+        ["2026-09-19", "2026-09-20"],
+        new Date("2026-09-21T12:00:00Z")
+      )
+    ).toBe("2026-09-20")
+  })
+
+  it("falls back to a lone in-progress day", () => {
+    expect(
+      completeExportDay(["2026-09-21"], new Date("2026-09-21T12:00:00Z"))
+    ).toBe("2026-09-21")
   })
 
   it("picks workhorse, cheap router, and frontier", () => {
@@ -633,6 +661,79 @@ describe("gateway-value rank", () => {
     expect(
       pickRising([sibling, other], { exclude: [capableModel.id] })?.id
     ).toBe(trainsOnPrompts.id)
+  })
+
+  it("keeps a one-day dropout inside daily pick gates via 7-day shares", () => {
+    const droppedToday = withGateShares(ranked(capableModel, { tokens: 0 }), {
+      requests: 0,
+      tokens: 8,
+      spend: 2,
+    })
+    const weekZeroSpike = withGateShares(ranked(noZdrModel, { tokens: 20 }), {
+      requests: 0,
+      tokens: 0,
+      spend: 0,
+    })
+    const adopted = attachDeepsec(
+      withGateShares(ranked(lunaModel, { tokens: 5 }), {
+        requests: 0,
+        tokens: 6,
+        spend: 1,
+      }),
+      [run(lunaModel.id, "medium", 15.48, 5.06)]
+    )
+
+    expect(hasAdoption(droppedToday)).toBe(true)
+    expect(hasAdoption(weekZeroSpike)).toBe(false)
+    expect(
+      pickBangForBuck([
+        attachDeepsec(droppedToday, [
+          run(capableModel.id, "medium", 20, 2),
+        ]),
+        attachDeepsec(weekZeroSpike, [
+          run(noZdrModel.id, "medium", 22, 2),
+        ]),
+        adopted,
+      ])?.id
+    ).toBe(capableModel.id)
+  })
+
+  it("ranks daily rising by day share minus the 7-day mean", () => {
+    const steady = withGateShares(ranked(datedFlash, { tokens: 10 }), {
+      requests: 0,
+      tokens: 9,
+      spend: 0,
+    })
+    const climber = withGateShares(ranked(trainsOnPrompts, { tokens: 6 }), {
+      requests: 0,
+      tokens: 1,
+      spend: 0,
+    })
+    const weekTokens = {
+      [datedFlash.id]: 9,
+      [trainsOnPrompts.id]: 1,
+    }
+
+    expect(pickRising([steady, climber])?.id).toBe(datedFlash.id)
+    expect(
+      pickRising([steady, climber], { priorTokens: weekTokens })?.id
+    ).toBe(trainsOnPrompts.id)
+  })
+
+  it("lists movers by day minus week share, excluding featured ids", () => {
+    const flash = withGateShares(ranked(capableModel, { tokens: 30 }), {
+      requests: 0,
+      tokens: 20,
+      spend: 0,
+    })
+    const climber = withGateShares(ranked(trainsOnPrompts, { tokens: 8 }), {
+      requests: 0,
+      tokens: 2,
+      spend: 0,
+    })
+    const movers = snapshotMovers([flash, climber], [capableModel.id])
+    expect(movers.map((mover) => mover.id)).toEqual([trainsOnPrompts.id])
+    expect(movers[0]?.delta).toBe(6)
   })
 
   it("ranks rising by week-over-week token growth when a prior week exists", () => {
@@ -1017,6 +1118,7 @@ describe("gateway-value snapshot", () => {
     const lists = buildLists([cheap], [cheap])
     const snapshot = buildSnapshot({
       generatedAt: "2026-08-31T19:00:00.000Z",
+      cadence: "week",
       window: { from: "2026-08-24", to: "2026-08-30" },
       languageModels: 200,
       zdrModels: 80,

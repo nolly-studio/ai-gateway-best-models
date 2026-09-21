@@ -29,7 +29,7 @@ export const STATIC_FAQS: SiteFaq[] = [
   },
   {
     question: "Which models count as capable?",
-    answer: `Capable models support tool use and have at least ${RANKING_RULES.minContext.toLocaleString()} tokens of context. Vision is not required. Cheap routers blend at or under $${RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M and must clear a quality floor: Deepsec ≥ ${RANKING_RULES.minDeepsecScore} or an Artificial Analysis intelligence/coding index ≥ ${RANKING_RULES.minAaQuality}. Workhorses are the capable models people actually run (at least ${RANKING_RULES.workhorseMinTokenShare}% token share) at or under $${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M, excluding the cheap-router family, ranked on everyday Deepsec — AA intelligence is the fallback when nobody in that pool is benchmarked. Frontier is the highest AA intelligence among capable models at or under $${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M. Rising is the leftover capable model in that same usable band, ranked on AA first so a high-quality catalog row the other roles missed can surface; week-over-week token growth is the fallback when nobody leftover has AA.`,
+    answer: `Capable models support tool use and have at least ${RANKING_RULES.minContext.toLocaleString()} tokens of context. Vision is not required. Cheap routers blend at or under $${RANKING_RULES.cheapBlendUsd.toFixed(2)} / 1M and must clear a quality floor: Deepsec ≥ ${RANKING_RULES.minDeepsecScore} or an Artificial Analysis intelligence/coding index ≥ ${RANKING_RULES.minAaQuality}. Workhorses are the capable models people actually run (at least ${RANKING_RULES.workhorseMinTokenShare}% token share of the 7-day mean, on both pages) at or under $${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M, excluding the cheap-router family, ranked on everyday Deepsec — AA intelligence is the fallback when nobody in that pool is benchmarked. Frontier is the highest AA intelligence among capable models at or under $${RANKING_RULES.midBlendUsd.toFixed(2)} / 1M. Rising is the leftover capable model in that same usable band, ranked on AA first so a high-quality catalog row the other roles missed can surface. Weekly fallback is week-over-week token-share growth; daily fallback is complete-day share minus the 7-day mean.`,
   },
   {
     question: "What does the AA number mean?",
@@ -39,6 +39,6 @@ export const STATIC_FAQS: SiteFaq[] = [
   {
     question: "Is this an official Vercel product?",
     answer:
-      "No. bestmodels.dev is an independent weekly ranking. Catalog, adoption, and DeepsecBench numbers come from Vercel AI Gateway data licensed CC BY 4.0. We are not affiliated with Vercel.",
+      "No. bestmodels.dev is an independent ranking (daily home, weekly at /week). Catalog, adoption, and DeepsecBench numbers come from Vercel AI Gateway data licensed CC BY 4.0. We are not affiliated with Vercel.",
   },
 ]

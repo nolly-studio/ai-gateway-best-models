@@ -7,6 +7,7 @@ import { ProviderIcon } from "@/components/provider-icon"
 import { pct } from "@/lib/format"
 import type {
   GatewaySnapshot,
+  SnapshotCadence,
   SnapshotLaneKey,
   SnapshotModel,
 } from "@/lib/gateway-snapshot"
@@ -17,6 +18,7 @@ import {
   ledgerCodingMetric,
   ledgerIntelMetric,
   ledgerScoreMetric,
+  emptyListNote,
   policyLabel,
   type LedgerMetric,
 } from "@/lib/picks"
@@ -98,7 +100,13 @@ function scoreMetric(model: SnapshotModel, filter: LedgerKey): LedgerMetric {
   }
 }
 
-export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
+export function ModelLedger({
+  cadence = "week",
+  lists,
+}: {
+  cadence?: SnapshotCadence
+  lists: GatewaySnapshot["lists"]
+}) {
   const [lane, setLane] = useState<SnapshotLaneKey>("privacy")
   const [filter, setFilter] = useState<LedgerKey>("aaIntelligence")
   const active =
@@ -206,7 +214,7 @@ export function ModelLedger({ lists }: { lists: GatewaySnapshot["lists"] }) {
           </div>
           {rows.length === 0 ? (
             <p className="px-3 py-6 text-[12.5px] text-ink-3">
-              Nothing in this list this week.
+              {emptyListNote(cadence)}
             </p>
           ) : (
             rows.map((model) => (

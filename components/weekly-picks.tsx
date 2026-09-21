@@ -1,17 +1,24 @@
 import { PickCards } from "@/components/pick-cards"
-import type { GatewaySnapshot } from "@/lib/gateway-snapshot"
+import type { GatewaySnapshot, SnapshotCadence } from "@/lib/gateway-snapshot"
 import {
   weeklyFeaturedPicks,
   weeklyPicksHint,
   weeklyPicksTitle,
 } from "@/lib/picks"
 
-export function WeeklyPicks({ picks }: { picks: GatewaySnapshot["picks"] }) {
+export function WeeklyPicks({
+  cadence = "week",
+  picks,
+}: {
+  cadence?: SnapshotCadence
+  picks: GatewaySnapshot["picks"]
+}) {
   return (
     <PickCards
-      hint={weeklyPicksHint()}
+      cadence={cadence}
+      hint={weeklyPicksHint(cadence)}
       picks={weeklyFeaturedPicks(picks)}
-      title={weeklyPicksTitle()}
+      title={weeklyPicksTitle(cadence)}
     />
   )
 }

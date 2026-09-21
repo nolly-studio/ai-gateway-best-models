@@ -1,25 +1,10 @@
 import type { Metadata } from "next"
 
-import { FaqList } from "@/components/faq-list"
-import { JsonLd } from "@/components/json-ld"
-import { LabsReadout } from "@/components/labs-readout"
-import { ModelLedger } from "@/components/model-ledger"
-import { HeroLead } from "@/components/hero-lead"
-import { PageFrame, PageHeader } from "@/components/page-frame"
-import { SiteFooter } from "@/components/site-footer"
-import { VercelLogo } from "@/components/vercel-logo"
+import { SnapshotPage, gatewayTitle } from "@/components/snapshot-page"
+import { WhatChanged } from "@/components/what-changed"
 import { TextLink } from "@/components/text-link"
-import { WeeklyPicks } from "@/components/weekly-picks"
-import { formatWindow } from "@/lib/format"
-import { weekPagePath } from "@/lib/gateway-snapshot"
-import { readHistory, readSnapshot } from "@/lib/read-snapshot"
-import {
-  homeDescription,
-  homeJsonLd,
-  homeTitle,
-  siteFaqs,
-  updatedLabel,
-} from "@/lib/seo"
+import { readSnapshot } from "@/lib/read-snapshot"
+import { homeDescription, homeJsonLd, homeTitle } from "@/lib/seo"
 
 export async function generateMetadata(): Promise<Metadata> {
   const snapshot = await readSnapshot()
@@ -45,62 +30,21 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page() {
-  const [snapshot, history] = await Promise.all([
-    readSnapshot(),
-    readHistory(),
-  ])
-  const window = formatWindow(snapshot.window.from, snapshot.window.to)
-  const archives = [...history.weeks].toReversed()
+  const snapshot = await readSnapshot()
 
   return (
-    <PageFrame>
-      <JsonLd data={homeJsonLd(snapshot)} />
-      <PageHeader
-        current="picks"
-        meta={
-          <>
-            {updatedLabel(snapshot)} · {window} · {snapshot.stats.languageModels}{" "}
-            models · {snapshot.stats.privacyModels} ZDR+NPT
-          </>
-        }
-        title={
-          <>
-            Best models on{" "}
-            <span className="whitespace-nowrap">
-              <VercelLogo className="mr-[0.22em] inline-block h-[0.62em] w-auto translate-y-[-0.03em]" />
-              Vercel AI Gateway
-            </span>
-          </>
-        }
-      >
-        <HeroLead snapshot={snapshot} />
-      </PageHeader>
-
-      <WeeklyPicks picks={snapshot.picks} />
-      <ModelLedger lists={snapshot.lists} />
-      <LabsReadout labs={snapshot.labs} />
-      <FaqList faqs={siteFaqs(snapshot)} />
-
-      {archives.length > 0 ? (
-        <section className="flex flex-col gap-1.5">
-          <h2 className="text-sm font-semibold text-ink">Weekly archives</h2>
-          <p className="text-[13px] leading-relaxed text-pretty text-ink-2">
-            {archives.map((week, index) => (
-              <span key={week.week}>
-                {index > 0 ? " · " : null}
-                <TextLink href={weekPagePath(week.week)}>
-                  {formatWindow(week.from, week.week)}
-                </TextLink>
-              </span>
-            ))}
-          </p>
-        </section>
-      ) : null}
-
-      <SiteFooter
-        attribution={snapshot.attribution}
-        week={snapshot.window.to}
-      />
-    </PageFrame>
+    <SnapshotPage
+      current="today"
+      jsonLd={homeJsonLd(snapshot)}
+      note={
+        <>
+          {" "}
+          <TextLink href="/week">See this week</TextLink>.
+        </>
+      }
+      snapshot={snapshot}
+      title={gatewayTitle("Vercel AI Gateway")}
+      whatChanged={<WhatChanged snapshot={snapshot} />}
+    />
   )
 }

@@ -9,6 +9,7 @@ import {
   SNAPSHOT_PICK_KEYS,
   SNAPSHOT_RELATIVE_PATH,
   SNAPSHOT_SCHEMA_VERSION,
+  WEEKLY_RELATIVE_PATH,
   emptyHistory,
   emptyHistoryLanePicks,
   weekSnapshotRelativePath,
@@ -38,9 +39,16 @@ type LegacyModel = SnapshotModel & {
 
 type LegacySnapshot = Omit<
   GatewaySnapshot,
-  "schemaVersion" | "picks" | "lists" | "sources" | "stats" | "unmatched"
+  | "schemaVersion"
+  | "cadence"
+  | "picks"
+  | "lists"
+  | "sources"
+  | "stats"
+  | "unmatched"
 > & {
   schemaVersion: number
+  cadence?: GatewaySnapshot["cadence"]
   sources: GatewaySnapshot["sources"] & { aa?: string }
   stats: GatewaySnapshot["stats"] & { aaModels?: number }
   unmatched: GatewaySnapshot["unmatched"] & { aa?: string[] }
@@ -106,6 +114,8 @@ function normalizeSnapshot(raw: LegacySnapshot): GatewaySnapshot {
   return {
     ...raw,
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    cadence:
+      raw.cadence ?? (raw.window.lookbackDays === 1 ? "day" : "week"),
     sources: {
       ...raw.sources,
       aa: raw.sources.aa ?? AA_API_URL,
@@ -147,12 +157,17 @@ function normalizeHistory(history: GatewayHistory): GatewayHistory {
   }
 }
 
-export async function readSnapshot(): Promise<GatewaySnapshot> {
-  const raw = await readFile(
-    join(process.cwd(), SNAPSHOT_RELATIVE_PATH),
-    "utf8"
-  )
+async function readSnapshotFile(relativePath: string): Promise<GatewaySnapshot> {
+  const raw = await readFile(join(process.cwd(), relativePath), "utf8")
   return normalizeSnapshot(JSON.parse(raw) as LegacySnapshot)
+}
+
+export async function readSnapshot(): Promise<GatewaySnapshot> {
+  return readSnapshotFile(SNAPSHOT_RELATIVE_PATH)
+}
+
+export async function readWeeklySnapshot(): Promise<GatewaySnapshot> {
+  return readSnapshotFile(WEEKLY_RELATIVE_PATH)
 }
 
 export async function readHistory(): Promise<GatewayHistory> {

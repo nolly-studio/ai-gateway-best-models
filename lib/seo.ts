@@ -9,8 +9,19 @@ import {
   SITE_DESCRIPTION,
   SITE_NAME,
   SITE_ORIGIN,
+  WEEK_DESCRIPTION,
+  WEEK_TITLE,
   siteUrl,
 } from "@/lib/site"
+
+function isDaily(snapshot: GatewaySnapshot): boolean {
+  return snapshot.cadence === "day"
+}
+
+function windowPhrase(snapshot: GatewaySnapshot): string {
+  const window = formatWindow(snapshot.window.from, snapshot.window.to)
+  return isDaily(snapshot) ? `As of ${window}` : `This week (${window})`
+}
 
 export function featuredValuePick(
   snapshot: GatewaySnapshot
@@ -25,28 +36,45 @@ export function featuredFrontierPick(
 }
 
 export function homeTitle(): string {
-  return "Best AI Gateway models this week"
+  return "Best AI Gateway models today"
+}
+
+export function weekIndexTitle(): string {
+  return WEEK_TITLE
 }
 
 export function homeDescription(snapshot: GatewaySnapshot): string {
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
+  if (isDaily(snapshot)) {
+    if (value && frontier && value.id !== frontier.id) {
+      return `Today’s best Vercel AI Gateway models (${window}): ${value.name} for value, ${frontier.name} for frontier. Ranked from catalog, adoption, and DeepsecBench.`
+    }
+    if (value) {
+      return `Today’s best Vercel AI Gateway model (${window}): ${value.name}. Daily picks from catalog, adoption, and DeepsecBench.`
+    }
+    return `${SITE_DESCRIPTION} As of ${window}.`
+  }
   if (value && frontier && value.id !== frontier.id) {
     return `This week’s best Vercel AI Gateway models (${window}): ${value.name} for value, ${frontier.name} for frontier. Ranked from catalog, adoption, and DeepsecBench.`
   }
   if (value) {
     return `This week’s best Vercel AI Gateway model (${window}): ${value.name}. Weekly picks from catalog, adoption, and DeepsecBench.`
   }
-  return `${SITE_DESCRIPTION} Week of ${window}.`
+  return `${WEEK_DESCRIPTION} Week of ${window}.`
+}
+
+export function weekIndexDescription(snapshot: GatewaySnapshot): string {
+  return homeDescription({ ...snapshot, cadence: "week" })
 }
 
 export function homeLead(snapshot: GatewaySnapshot): string {
-  const window = formatWindow(snapshot.window.from, snapshot.window.to)
+  const phrase = windowPhrase(snapshot)
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
   if (value == null) {
-    return `This week (${window}), bestmodels.dev ranks Vercel AI Gateway models from the live catalog, adoption, and DeepsecBench.`
+    return `${phrase}, bestmodels.dev ranks Vercel AI Gateway models from the live catalog, adoption, and DeepsecBench.`
   }
 
   const blend = money(blendOf(value))
@@ -58,15 +86,17 @@ export function homeLead(snapshot: GatewaySnapshot): string {
   const valueClause = `the best pick on AI Gateway is ${value.name} at ${blend} / 1M blended${provider}${discount}`
 
   if (frontier && frontier.id !== value.id) {
-    return `This week (${window}), ${valueClause}. The frontier pick is ${frontier.name}.`
+    return `${phrase}, ${valueClause}. The frontier pick is ${frontier.name}.`
   }
-  return `This week (${window}), ${valueClause}.`
+  return `${phrase}, ${valueClause}.`
 }
 
 export function siteFaqs(snapshot: GatewaySnapshot): SiteFaq[] {
   return [
     {
-      question: "What is the best AI Gateway model this week?",
+      question: isDaily(snapshot)
+        ? "What is the best AI Gateway model today?"
+        : "What is the best AI Gateway model this week?",
       answer: homeLead(snapshot),
     },
     ...STATIC_FAQS,
@@ -83,8 +113,9 @@ function listItems(models: SnapshotModel[]) {
 }
 
 export function homeJsonLd(snapshot: GatewaySnapshot) {
-  const weekly = weeklyFeaturedPicks(snapshot.picks).map((pick) => pick.model)
+  const featured = weeklyFeaturedPicks(snapshot.picks).map((pick) => pick.model)
   const faqs = siteFaqs(snapshot)
+  const daily = isDaily(snapshot)
 
   return {
     "@context": "https://schema.org",
@@ -107,8 +138,10 @@ export function homeJsonLd(snapshot: GatewaySnapshot) {
       {
         "@type": "Dataset",
         "@id": `${SITE_ORIGIN}/#dataset`,
-        name: "Weekly Vercel AI Gateway model rankings",
-        description: SITE_DESCRIPTION,
+        name: daily
+          ? "Daily Vercel AI Gateway model rankings"
+          : "Weekly Vercel AI Gateway model rankings",
+        description: daily ? SITE_DESCRIPTION : WEEK_DESCRIPTION,
         url: SITE_ORIGIN,
         license: snapshot.attribution.licenseUrl,
         creator: {
@@ -123,15 +156,21 @@ export function homeJsonLd(snapshot: GatewaySnapshot) {
           {
             "@type": "DataDownload",
             encodingFormat: "application/json",
-            contentUrl: siteUrl("/data/gateway.json"),
+            contentUrl: siteUrl(
+              daily ? "/data/gateway.json" : "/data/weekly.json"
+            ),
           },
         ],
       },
       {
         "@type": "ItemList",
-        "@id": `${SITE_ORIGIN}/#weekly-picks`,
-        name: "This week's AI Gateway picks",
-        itemListElement: listItems(weekly),
+        "@id": daily
+          ? `${SITE_ORIGIN}/#daily-picks`
+          : `${SITE_ORIGIN}/#weekly-picks`,
+        name: daily
+          ? "Today's AI Gateway picks"
+          : "This week's AI Gateway picks",
+        itemListElement: listItems(featured),
       },
       {
         "@type": "FAQPage",
@@ -165,6 +204,50 @@ export function methodologyJsonLd() {
         "@type": "FAQPage",
         "@id": `${siteUrl("/methodology")}#faq`,
         mainEntity: STATIC_FAQS.map((faq) => ({
+          "@type": "Question",
+          name: faq.question,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: faq.answer,
+          },
+        })),
+      },
+    ],
+  }
+}
+
+export function weekIndexJsonLd(snapshot: GatewaySnapshot) {
+  const featured = weeklyFeaturedPicks(snapshot.picks).map((pick) => pick.model)
+  const faqs = siteFaqs({ ...snapshot, cadence: "week" })
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Dataset",
+        "@id": `${SITE_ORIGIN}/week#dataset`,
+        name: "Weekly Vercel AI Gateway model rankings",
+        description: WEEK_DESCRIPTION,
+        url: siteUrl("/week"),
+        license: snapshot.attribution.licenseUrl,
+        dateModified: snapshot.generatedAt,
+        temporalCoverage: `${snapshot.window.from}/${snapshot.window.to}`,
+        isAccessibleForFree: true,
+        distribution: {
+          "@type": "DataDownload",
+          encodingFormat: "application/json",
+          contentUrl: siteUrl("/data/weekly.json"),
+        },
+      },
+      {
+        "@type": "ItemList",
+        "@id": `${SITE_ORIGIN}/week#weekly-picks`,
+        name: "This week's AI Gateway picks",
+        itemListElement: listItems(featured),
+      },
+      {
+        "@type": "FAQPage",
+        "@id": `${siteUrl("/week")}#faq`,
+        mainEntity: faqs.map((faq) => ({
           "@type": "Question",
           name: faq.question,
           acceptedAnswer: {

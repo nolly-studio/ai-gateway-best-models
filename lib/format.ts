@@ -54,6 +54,10 @@ export function formatWindow(from: string, to: string): string {
     return `${from} → ${to}`
   }
 
+  if (from === to) {
+    return `${startMonth} ${startDay}, ${year}`
+  }
+
   if (startMonth === endMonth) {
     return `${startMonth} ${startDay}–${endDay}, ${year}`
   }

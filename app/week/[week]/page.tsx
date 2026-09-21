@@ -76,7 +76,7 @@ export default async function WeekPage({ params }: WeekPageProps) {
     <PageFrame>
       <JsonLd data={weekJsonLd(snapshot)} />
       <PageHeader
-        current="picks"
+        current="week"
         meta={
           <>
             {updatedLabel(snapshot)} · {window} · {snapshot.stats.languageModels}{" "}
@@ -90,7 +90,7 @@ export default async function WeekPage({ params }: WeekPageProps) {
             <>
               {" "}
               Snapshot of the weekly ranking.{" "}
-              <TextLink href="/">See the current week</TextLink>.
+              <TextLink href="/week">See the current week</TextLink>.
             </>
           }
           snapshot={snapshot}
@@ -119,7 +119,7 @@ export default async function WeekPage({ params }: WeekPageProps) {
         )}
       </nav>
 
-      <SiteFooter attribution={snapshot.attribution} week={week} />
+      <SiteFooter archiveWeek={week} attribution={snapshot.attribution} />
     </PageFrame>
   )
 }

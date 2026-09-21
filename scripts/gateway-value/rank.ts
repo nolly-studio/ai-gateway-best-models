@@ -29,8 +29,9 @@
  *   a quality floor (Deepsec ≥ MIN or AA intel/coding ≥ MIN_AA_QUALITY).
  * Rising = leftover capable model at a usable price, excluding families
  *   that already hold a pick. AA intelligence first so a high-quality
- *   catalog row like Grok can surface; week-over-week token growth is
- *   the fallback when nobody leftover has AA.
+ *   catalog row like Grok can surface. Weekly fallback is week-over-week
+ *   token growth; daily fallback is complete-day share minus the 7-day
+ *   mean from the same fetch.
  * Discount = official AI Gateway list-vs-sale promo from the models page
  *   (`inputListCostTiers` vs current `inputCost`). Cheaper third-party
  *   endpoints are a routing price, not a sale. Must clear
@@ -206,6 +207,12 @@ export type RankedModel = {
   requestsShare: number
   tokensShare: number
   spendShare: number
+  /**
+   * 7-day mean shares, set on the daily rank only. Gates (hasAdoption,
+   * workhorse floor) read these so a one-day dropout or spike cannot
+   * jump pick pools. Display fields stay the 1-day numbers.
+   */
+  weekShares?: Adoption
   valueScore: number | null
   overpay: number | null
   /** Run with the highest score (frontier's number). */
@@ -332,6 +339,47 @@ export function lookbackWindow(
     to,
     window: new Set(slice),
   }
+}
+
+/**
+ * Last complete leaderboard date. If the newest export date is today's
+ * UTC calendar day, drop it as in-progress. A lone in-progress day is
+ * kept with a warning so a first-day export still ranks.
+ */
+export function completeExportDay(
+  dates: string[],
+  now: Date = new Date()
+): string {
+  const today = now.toISOString().slice(0, 10)
+  const newest = dates.at(-1)
+  if (newest == null) {
+    return ""
+  }
+  if (newest !== today) {
+    return newest
+  }
+  const previous = dates.at(-2)
+  if (previous != null) {
+    return previous
+  }
+  console.warn(
+    "completeExportDay: only an in-progress UTC day is available; using it"
+  )
+  return newest
+}
+
+export function withGateShares(
+  model: RankedModel,
+  week: Adoption | undefined
+): RankedModel {
+  return {
+    ...model,
+    weekShares: week ?? { requests: 0, tokens: 0, spend: 0 },
+  }
+}
+
+export function gateTokens(model: RankedModel): number {
+  return model.weekShares?.tokens ?? model.tokensShare
 }
 
 export function indexCatalog(models: GatewayModel[]): CatalogIndex {
@@ -775,9 +823,10 @@ export function attachAa(
 }
 
 export function hasAdoption(model: RankedModel): boolean {
-  return (
-    model.requestsShare > 0 || model.tokensShare > 0 || model.spendShare > 0
-  )
+  const requests = model.weekShares?.requests ?? model.requestsShare
+  const tokens = model.weekShares?.tokens ?? model.tokensShare
+  const spend = model.weekShares?.spend ?? model.spendShare
+  return requests > 0 || tokens > 0 || spend > 0
 }
 
 export function isCapable(model: RankedModel): boolean {
@@ -896,7 +945,7 @@ export function pickDefaultWorkhorse(
   const taken = excludedFamilies([cheap])
   const usable = models.filter((model) => isCapable(model) && inUsableBand(model))
   const overFloor = usable.filter(
-    (model) => model.tokensShare >= WORKHORSE_MIN_TOKEN_SHARE
+    (model) => gateTokens(model) >= WORKHORSE_MIN_TOKEN_SHARE
   )
   const adopted = overFloor.length > 0 ? overFloor : usable.filter(hasAdoption)
   const withoutCheap = adopted.filter(

@@ -7,6 +7,10 @@ describe("format", () => {
     expect(formatWindow("2026-08-25", "2026-08-31")).toBe("Aug 25–31, 2026")
   })
 
+  it("formats a single-day window without a range", () => {
+    expect(formatWindow("2026-09-01", "2026-09-01")).toBe("Sep 1, 2026")
+  })
+
   it("formats a cross-month window", () => {
     expect(formatWindow("2026-07-28", "2026-08-03")).toBe("Jul 28–Aug 3, 2026")
   })

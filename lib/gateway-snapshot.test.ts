@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  buildSnapshotDelta,
   emptyHistory,
   HISTORY_SCHEMA_VERSION,
   priorWeekTokenShares,
+  shouldWriteWeekArchive,
   SNAPSHOT_SCHEMA_VERSION,
   toHistoryWeek,
   tokenSharesFromModels,
@@ -68,6 +70,7 @@ function snapshot(overrides: Partial<GatewaySnapshot> = {}): GatewaySnapshot {
 
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    cadence: "week",
     generatedAt: "2026-08-31T19:00:00.000Z",
     window: { from: "2026-08-25", to: "2026-08-31", lookbackDays: 7 },
     sources: {
@@ -279,5 +282,50 @@ describe("upsertHistory", () => {
     expect(history.weeks[0]?.picks.privacy.bangForBuck).toBe(
       "alibaba/qwen3.8-max"
     )
+  })
+})
+
+describe("shouldWriteWeekArchive", () => {
+  it("writes when history is empty", () => {
+    expect(shouldWriteWeekArchive(emptyHistory(), "2026-09-21")).toBe(true)
+  })
+
+  it("waits until the last week is at least 7 days old", () => {
+    const history = upsertHistory(emptyHistory(), toHistoryWeek(snapshot()))
+    expect(shouldWriteWeekArchive(history, "2026-09-06")).toBe(false)
+    expect(shouldWriteWeekArchive(history, "2026-09-07")).toBe(true)
+  })
+})
+
+describe("buildSnapshotDelta", () => {
+  it("records pick id diffs and keeps movers", () => {
+    const weekly = snapshot()
+    const daily = snapshot({
+      cadence: "day",
+      window: { from: "2026-09-01", to: "2026-09-01", lookbackDays: 1 },
+      picks: {
+        privacy: weekly.picks.privacy,
+        open: {
+          ...weekly.picks.open,
+          workhorse: model("openai/gpt-5.6-luna"),
+        },
+      },
+    })
+    const delta = buildSnapshotDelta(daily, weekly, [
+      {
+        id: "zai/glm-5.3",
+        name: "GLM 5.3",
+        dayShare: 8,
+        weekShare: 3,
+        delta: 5,
+      },
+    ])
+
+    expect(delta.vsWeek.open?.workhorse).toEqual({
+      from: "deepseek/deepseek-v4-flash",
+      to: "openai/gpt-5.6-luna",
+    })
+    expect(delta.vsWeek.open?.bangForBuck).toBeUndefined()
+    expect(delta.movers).toHaveLength(1)
   })
 })

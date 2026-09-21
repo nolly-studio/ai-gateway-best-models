@@ -91,6 +91,7 @@ export function HeroLead({
   snapshot: GatewaySnapshot
 }) {
   const window = formatWindow(snapshot.window.from, snapshot.window.to)
+  const daily = snapshot.cadence === "day"
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
   const sources = (
@@ -101,7 +102,9 @@ export function HeroLead({
       </TextLink>
       ,{" "}
       <TextLink external href={MODELS_LEADERBOARD_URL}>
-        7-day adoption
+        {daily
+          ? "complete-day adoption vs 7-day mean"
+          : "7-day adoption"}
       </TextLink>
       , discounts, and{" "}
       <TextLink external href={DEEPSEC_RESULTS_URL}>
@@ -131,7 +134,7 @@ export function HeroLead({
   return (
     <>
       <p>
-        This week ({window}), the best pick on{" "}
+        {daily ? `As of ${window}` : `This week (${window})`}, the best pick on{" "}
         <TextLink external href={GATEWAY_URL}>
           AI Gateway
         </TextLink>{" "}

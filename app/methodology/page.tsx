@@ -20,7 +20,7 @@ import { methodologyJsonLd } from "@/lib/seo"
 
 const title = "How we rank AI Gateway models"
 const description =
-  "Independent methodology for weekly Vercel AI Gateway picks: ZDR + no-training filters, capable-model rules, blended price, bang-for-buck, Artificial Analysis, and DeepsecBench."
+  "Independent methodology for daily and weekly Vercel AI Gateway picks: complete-day vs 7-day adoption, ZDR + no-training filters, capable-model rules, blended price, bang-for-buck, Artificial Analysis, and DeepsecBench."
 
 export const metadata: Metadata = {
   title,
@@ -47,19 +47,32 @@ export default async function MethodologyPage() {
       <JsonLd data={methodologyJsonLd()} />
       <PageHeader
         current="methodology"
-        meta="Ranking rules · 7-day lookback"
+        meta="Ranking rules · daily + 7-day lookback"
         title="How we rank AI Gateway models"
       >
-        Independent weekly ranking. Not affiliated with Vercel. Catalog,
-        adoption, and DeepsecBench numbers come from Vercel AI Gateway data
-        licensed CC BY 4.0.
+        Independent ranking (daily + weekly). Not affiliated with Vercel.
+        Catalog, adoption, and DeepsecBench numbers come from Vercel AI
+        Gateway data licensed CC BY 4.0.
       </PageHeader>
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-ink">
-          What the weekly picks mean
+          What the picks mean
         </h2>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-[13.5px] leading-relaxed text-pretty text-ink-2">
+          <li>
+            <strong className="font-medium text-ink">Today vs this week</strong>{" "}
+            share the same formulas.{" "}
+            <TextLink href="/">Today</TextLink> ranks the last complete
+            export day: displayed shares are that day, but pick{" "}
+            <em>gates</em> (adoption, the {RANKING_RULES.workhorseMinTokenShare}%
+            workhorse floor) still use the 7-day mean so a one-day dropout or
+            spike cannot jump pools. Rising&apos;s fallback is that day minus
+            the 7-day mean.{" "}
+            <TextLink href="/week">This week</TextLink> is the citable 7-day
+            ranking — same math as before. Week-over-week token-share growth
+            is the weekly rising fallback.
+          </li>
           <li>
             <strong className="font-medium text-ink">Homepage picks</strong>{" "}
             are the unrestricted winners. ZDR is a badge on the card when the
@@ -89,9 +102,11 @@ export default async function MethodologyPage() {
             route through.
           </li>
           <li>
-            <strong className="font-medium text-ink">Value</strong> is{" "}
-            {RANKING_RULES.lookbackDays}-day mean token share divided by blended
-            $ / 1M. Days a model is absent from the leaderboard count as zero.
+            <strong className="font-medium text-ink">Value</strong> on the
+            weekly page is {RANKING_RULES.lookbackDays}-day mean token share
+            divided by blended $ / 1M. The daily page uses that complete
+            day&apos;s share in the same formula. Days a model is absent from
+            the leaderboard count as zero in the 7-day mean.
           </li>
           <li>
             <strong className="font-medium text-ink">Bang-for-buck</strong> is a
@@ -121,8 +136,8 @@ export default async function MethodologyPage() {
             <strong className="font-medium text-ink">Rising</strong> is the
             leftover capable model in that same usable band, ranked on AA
             first so a high-quality catalog row the other roles missed can
-            surface. Week-over-week token-share growth is the fallback when
-            nobody leftover has AA.
+            surface. Weekly fallback is week-over-week token-share growth;
+            daily fallback is complete-day share minus the 7-day mean.
           </li>
         </ul>
       </section>
@@ -166,7 +181,7 @@ export default async function MethodologyPage() {
       </section>
 
       <FaqList faqs={STATIC_FAQS} />
-      <SiteFooter attribution={snapshot.attribution} week={snapshot.window.to} />
+      <SiteFooter attribution={snapshot.attribution} />
     </PageFrame>
   )
 }

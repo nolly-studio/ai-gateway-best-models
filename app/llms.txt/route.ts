@@ -1,17 +1,14 @@
 import { formatWindow } from "@/lib/format"
 import { weekPagePath } from "@/lib/gateway-snapshot"
-import { readSnapshot } from "@/lib/read-snapshot"
+import { readSnapshot, readWeeklySnapshot } from "@/lib/read-snapshot"
 import { featuredFrontierPick, featuredValuePick } from "@/lib/seo"
 import { siteUrl } from "@/lib/site"
 
-export async function GET() {
-  const snapshot = await readSnapshot()
-  const window = formatWindow(snapshot.window.from, snapshot.window.to)
+function pickLines(snapshot: Awaited<ReturnType<typeof readSnapshot>>) {
   const value = featuredValuePick(snapshot)
   const frontier = featuredFrontierPick(snapshot)
-  const weekPath = weekPagePath(snapshot.window.to)
   const open = snapshot.picks.open
-  const picks = [
+  return [
     value ? `- Bang: ${value.name} (${value.id})` : null,
     open.workhorse
       ? `- Workhorse: ${open.workhorse.name} (${open.workhorse.id})`
@@ -26,33 +23,48 @@ export async function GET() {
   ]
     .filter((line): line is string => line != null)
     .join("\n")
+}
+
+export async function GET() {
+  const [daily, weekly] = await Promise.all([
+    readSnapshot(),
+    readWeeklySnapshot(),
+  ])
+  const dayWindow = formatWindow(daily.window.from, daily.window.to)
+  const weekWindow = formatWindow(weekly.window.from, weekly.window.to)
+  const weekPath = weekPagePath(weekly.window.to)
 
   const body = `# bestmodels.dev
 
-Weekly ranked picks for Vercel AI Gateway models. Independent. Not affiliated with Vercel.
+Daily and weekly ranked picks for Vercel AI Gateway models. Independent. Not affiliated with Vercel.
 
-This week (${window}):
-${picks}
+Today (as of ${dayWindow}):
+${pickLines(daily)}
+
+This week (${weekWindow}):
+${pickLines(weekly)}
 
 ## Pages
 
-- [This week's picks](${siteUrl("/")}): Current weekly picks on AI Gateway
+- [Today's picks](${siteUrl("/")}): Current daily picks on AI Gateway
+- [This week's picks](${siteUrl("/week")}): Citable 7-day ranking
 - [Methodology](${siteUrl("/methodology")}): How value, bang, ZDR, and capable-model filters work
-- [This week archive](${siteUrl(weekPath)}): Snapshot for ${window}
+- [This week archive](${siteUrl(weekPath)}): Snapshot for ${weekWindow}
 
 ## Machine-readable data
 
-- [This week's snapshot](${siteUrl("/data/gateway.json")}): Full ranked picks, lists, and lab shares
+- [Today's snapshot](${siteUrl("/data/gateway.json")}): Daily ranked picks (tokensShare is one complete day)
+- [This week's snapshot](${siteUrl("/data/weekly.json")}): 7-day ranked picks, lists, and lab shares
 - [History](${siteUrl("/data/history.json")}): Week-by-week pick IDs
-- [Week file](${siteUrl(`/data/weeks/${snapshot.window.to}.json`)}): Archived snapshot for ${snapshot.window.to}
+- [Week file](${siteUrl(`/data/weeks/${weekly.window.to}.json`)}): Archived snapshot for ${weekly.window.to}
 
 ## Sources
 
-- Catalog: ${snapshot.sources.catalog}
-- DeepsecBench: ${snapshot.sources.deepsec}
-- Artificial Analysis: ${snapshot.sources.aa}
-- ${snapshot.attribution.text}
-- License: ${snapshot.attribution.licenseUrl}
+- Catalog: ${daily.sources.catalog}
+- DeepsecBench: ${daily.sources.deepsec}
+- Artificial Analysis: ${daily.sources.aa}
+- ${daily.attribution.text}
+- License: ${daily.attribution.licenseUrl}
 `
 
   return new Response(body, {

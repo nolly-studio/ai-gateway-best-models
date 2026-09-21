@@ -1,5 +1,5 @@
 /**
- * Rank Vercel AI Gateway language models and write the weekly snapshot archive.
+ * Rank Vercel AI Gateway language models and write daily + weekly snapshots.
  *
  * Usage:
  *   bun run gateway:value
@@ -23,13 +23,18 @@ import { dirname, join } from "node:path"
 
 import {
   HISTORY_RELATIVE_PATH,
+  buildSnapshotDelta,
+  featuredPickIds,
   priorWeekTokenShares,
+  shouldWriteWeekArchive,
   SNAPSHOT_RELATIVE_PATH,
+  WEEKLY_RELATIVE_PATH,
   toHistoryWeek,
   tokenSharesFromModels,
   upsertHistory,
   weekSnapshotRelativePath,
   type GatewaySnapshot,
+  type SnapshotCadence,
   type SnapshotLaneKey,
   type SnapshotLists,
 } from "../../lib/gateway-snapshot"
@@ -51,6 +56,7 @@ import {
   attachPromo,
   averageAdoption,
   CHEAP_BLEND_USD,
+  completeExportDay,
   hasPrivacy,
   hasZdr,
   indexCatalog,
@@ -67,6 +73,7 @@ import {
   rankFromBoard,
   rankFromCatalog,
   uniqueSortedDates,
+  withGateShares,
   type AaIndices,
   type AaRecord,
   type Adoption,
@@ -80,6 +87,8 @@ import {
   buildLists,
   buildSnapshot,
   listLabNames,
+  snapshotMovers,
+  weekTokenSharesFromModels,
   type RankedPicks,
 } from "./snapshot"
 
@@ -205,46 +214,61 @@ function enrich(
   return attachPromo(withEndpoints, promos.get(model.id))
 }
 
-export async function buildGatewaySnapshot(): Promise<{
-  snapshot: GatewaySnapshot
-  tokenShares: Record<string, number>
-}> {
-  const [catalog, rows, labRows, deepsecRows, aaRows, promos] =
-    await Promise.all([
-      fetchCatalog(),
-      fetchLeaderboard(),
-      fetchLabsLeaderboard(),
-      fetchDeepsecBench(),
-      fetchAaIndices(),
-      fetchOfficialPromos(),
-    ])
+type RankedLanes = {
+  openRanked: RankedModel[]
+  privacyRanked: RankedModel[]
+  openLeaderboard: RankedModel[]
+  privacyLeaderboard: RankedModel[]
+  catalogBase: RankedModel[]
+  labs: Map<string, Adoption>
+}
 
-  const dates = uniqueSortedDates(rows)
-  const { from, to, window } = lookbackWindow(dates)
-  const history = await readHistory()
-  const priorTokens = priorWeekTokenShares(history, to)
-  const index = indexCatalog(catalog)
-  const adoption = averageAdoption(rows, window)
-  const labs = averageAdoption(
-    labRows,
-    lookbackWindow(uniqueSortedDates(labRows)).window
-  )
+function aaSourceLabel(rows: AaRecord[]): string {
+  const sources = new Set(rows.map((row) => row.source))
+  if (sources.has("aa") && sources.has("openrouter")) {
+    return "mixed"
+  }
+  if (sources.has("aa")) {
+    return "aa"
+  }
+  if (sources.has("openrouter")) {
+    return "openrouter"
+  }
+  return "none"
+}
+
+function rankCadence(
+  catalog: Awaited<ReturnType<typeof fetchCatalog>>,
+  index: ReturnType<typeof indexCatalog>,
+  adoption: Map<string, Adoption>,
+  labs: Map<string, Adoption>,
+  deepsec: Map<string, DeepsecRow[]>,
+  aa: Map<string, AaIndices>,
+  quotes: Map<string, EndpointQuote[]>,
+  promos: Map<string, OfficialPromo>,
+  gateAdoption?: Map<string, Adoption>
+): RankedLanes {
   const adoptionById = adoptionByCatalogId(adoption, index)
-  const deepsec = deepsecByCatalogId(deepsecRows, index)
-  const { byId: aa, unmatched: unmatchedAa } = aaByCatalogId(aaRows, index)
-
-  const quotes = await fetchEndpointQuotes(catalog.map((model) => model.id))
+  const gateById =
+    gateAdoption == null ? null : adoptionByCatalogId(gateAdoption, index)
+  const attachGates = (model: RankedModel): RankedModel => {
+    if (gateById == null) {
+      return model
+    }
+    return withGateShares(
+      model,
+      gateById.get(model.id) ?? gateAdoption?.get(model.boardName)
+    )
+  }
 
   const boardRanked = [...adoption.entries()].map(([name, metrics]) =>
-    rankFromBoard(name, matchCatalog(name, index), metrics)
+    attachGates(rankFromBoard(name, matchCatalog(name, index), metrics))
   )
   const catalogBase = catalog
     .map((model) => rankFromCatalog(model, adoptionById.get(model.id)))
     .filter((model): model is RankedModel => model != null)
+    .map(attachGates)
 
-  // Each lane prices models against the endpoints it may route through:
-  // the privacy lane pays the cheapest ZDR endpoint, the open lane pays
-  // min(list, cheapest endpoint of any kind).
   const openLeaderboard = boardRanked.map((model) =>
     enrich(model, deepsec, aa, quotes, promos, false)
   )
@@ -258,65 +282,200 @@ export async function buildGatewaySnapshot(): Promise<{
     .filter(hasPrivacy)
     .map((model) => enrich(model, deepsec, aa, quotes, promos, true))
 
-  const unmatched = openLeaderboard.filter((model) => model.unmatched)
+  return {
+    openRanked,
+    privacyRanked,
+    openLeaderboard,
+    privacyLeaderboard,
+    catalogBase,
+    labs,
+  }
+}
+
+function snapshotFromRanked(
+  cadence: SnapshotCadence,
+  window: { from: string; to: string },
+  ranked: RankedLanes,
+  catalogCount: number,
+  deepsecRuns: number,
+  aaModels: number,
+  unmatched: GatewaySnapshot["unmatched"],
+  priorTokens?: Record<string, number>
+): GatewaySnapshot {
+  const zdrModels = ranked.catalogBase.filter(hasZdr).length
+  return buildSnapshot({
+    cadence,
+    window,
+    languageModels: catalogCount,
+    zdrModels,
+    privacyModels: ranked.privacyRanked.length,
+    deepsecRuns,
+    aaModels,
+    picks: {
+      privacy: picksFrom(ranked.privacyRanked, priorTokens),
+      open: picksFrom(ranked.openRanked, priorTokens),
+    },
+    lists: {
+      privacy: buildLists(ranked.privacyRanked, ranked.privacyLeaderboard),
+      open: buildLists(ranked.openRanked, ranked.openLeaderboard),
+    },
+    labs: ranked.labs,
+    labBang: {
+      privacy: buildLabBang(ranked.privacyRanked, listLabNames(ranked.labs)),
+      open: buildLabBang(ranked.openRanked, listLabNames(ranked.labs)),
+    },
+    unmatched,
+  })
+}
+
+export async function buildGatewaySnapshot(): Promise<{
+  daily: GatewaySnapshot
+  weekly: GatewaySnapshot
+  weeklyTokenShares: Record<string, number>
+}> {
+  const [catalog, rows, labRows, deepsecRows, aaRows, promos] =
+    await Promise.all([
+      fetchCatalog(),
+      fetchLeaderboard(),
+      fetchLabsLeaderboard(),
+      fetchDeepsecBench(),
+      fetchAaIndices(),
+      fetchOfficialPromos(),
+    ])
+
+  const dates = uniqueSortedDates(rows)
+  const completeDay = completeExportDay(dates)
+  const weeklyWindow = lookbackWindow(dates)
+  const dailyWindow = lookbackWindow(
+    dates.filter((date) => date <= completeDay),
+    1
+  )
+  const history = await readHistory()
+  const priorWeekTokens = priorWeekTokenShares(history, weeklyWindow.to)
+  const index = indexCatalog(catalog)
+  const weekAdoption = averageAdoption(rows, weeklyWindow.window)
+  const dayAdoption = averageAdoption(rows, dailyWindow.window)
+  const labDates = uniqueSortedDates(labRows)
+  const weekLabs = averageAdoption(
+    labRows,
+    lookbackWindow(labDates).window
+  )
+  const dayLabDates = labDates.filter((date) => date <= completeDay)
+  const dayLabs = averageAdoption(
+    labRows,
+    lookbackWindow(dayLabDates, 1).window
+  )
+  const deepsec = deepsecByCatalogId(deepsecRows, index)
+  const { byId: aa, unmatched: unmatchedAa } = aaByCatalogId(aaRows, index)
+  const aaSource = aaSourceLabel(aaRows)
+  console.log(`Artificial Analysis source: ${aaSource}`)
+
+  const quotes = await fetchEndpointQuotes(catalog.map((model) => model.id))
+
+  const weeklyRanked = rankCadence(
+    catalog,
+    index,
+    weekAdoption,
+    weekLabs,
+    deepsec,
+    aa,
+    quotes,
+    promos
+  )
+  const dailyRanked = rankCadence(
+    catalog,
+    index,
+    dayAdoption,
+    dayLabs,
+    deepsec,
+    aa,
+    quotes,
+    promos,
+    weekAdoption
+  )
+
+  const unmatchedLeaderboard = weeklyRanked.openLeaderboard.filter(
+    (model) => model.unmatched
+  )
   const unmatchedDeepsec = deepsecRows.filter(
     (row) => matchModelId(row.id, index) == null
   )
+  const unmatched = {
+    leaderboard: unmatchedLeaderboard.map((model) => model.boardName),
+    deepsec: [
+      ...new Set(unmatchedDeepsec.map((row) => `${row.id} (${row.effort})`)),
+    ],
+    aa: [...new Set(unmatchedAa)],
+  }
+
+  const weekly = snapshotFromRanked(
+    "week",
+    { from: weeklyWindow.from, to: weeklyWindow.to },
+    weeklyRanked,
+    catalog.length,
+    deepsecRows.length,
+    aa.size,
+    unmatched,
+    priorWeekTokens
+  )
+  const dailyPriorTokens = weekTokenSharesFromModels(dailyRanked.openRanked)
+  let daily = snapshotFromRanked(
+    "day",
+    { from: dailyWindow.from, to: dailyWindow.to },
+    dailyRanked,
+    catalog.length,
+    deepsecRows.length,
+    aa.size,
+    unmatched,
+    dailyPriorTokens
+  )
+  daily = {
+    ...daily,
+    delta: buildSnapshotDelta(
+      daily,
+      weekly,
+      snapshotMovers(dailyRanked.openRanked, featuredPickIds(daily.picks))
+    ),
+  }
 
   return {
-    snapshot: buildSnapshot({
-      window: { from, to },
-      languageModels: catalog.length,
-      zdrModels: catalogBase.filter(hasZdr).length,
-      privacyModels: privacyRanked.length,
-      deepsecRuns: deepsecRows.length,
-      aaModels: aa.size,
-      picks: {
-        privacy: picksFrom(privacyRanked, priorTokens),
-        open: picksFrom(openRanked, priorTokens),
-      },
-      lists: {
-        privacy: buildLists(privacyRanked, privacyLeaderboard),
-        open: buildLists(openRanked, openLeaderboard),
-      },
-      labs,
-      labBang: {
-        privacy: buildLabBang(privacyRanked, listLabNames(labs)),
-        open: buildLabBang(openRanked, listLabNames(labs)),
-      },
-      unmatched: {
-        leaderboard: unmatched.map((model) => model.boardName),
-        deepsec: [
-          ...new Set(unmatchedDeepsec.map((row) => `${row.id} (${row.effort})`)),
-        ],
-        aa: [...new Set(unmatchedAa)],
-      },
-    }),
-    tokenShares: tokenSharesFromModels(openRanked),
+    daily,
+    weekly,
+    weeklyTokenShares: tokenSharesFromModels(weeklyRanked.openRanked),
   }
 }
 
 async function writeSnapshot(
-  snapshot: GatewaySnapshot,
-  tokenShares: Record<string, number>
-): Promise<string[]> {
-  const latestPath = join(process.cwd(), SNAPSHOT_RELATIVE_PATH)
-  const weekPath = join(
-    process.cwd(),
-    weekSnapshotRelativePath(snapshot.window.to)
-  )
+  daily: GatewaySnapshot,
+  weekly: GatewaySnapshot,
+  weeklyTokenShares: Record<string, number>
+): Promise<{ paths: string[]; archivedWeek: boolean }> {
+  const dailyPath = join(process.cwd(), SNAPSHOT_RELATIVE_PATH)
+  const weeklyPath = join(process.cwd(), WEEKLY_RELATIVE_PATH)
   const historyPath = join(process.cwd(), HISTORY_RELATIVE_PATH)
-  const history = upsertHistory(
-    await readHistory(),
-    toHistoryWeek(snapshot, tokenShares)
-  )
-  const body = `${JSON.stringify(snapshot, null, 2)}\n`
+  const history = await readHistory()
+  const archivedWeek = shouldWriteWeekArchive(history, weekly.window.to)
+  const paths = [dailyPath, weeklyPath]
 
-  await mkdir(dirname(weekPath), { recursive: true })
-  await writeFile(latestPath, body)
-  await writeFile(weekPath, body)
-  await writeFile(historyPath, `${JSON.stringify(history, null, 2)}\n`)
-  return [latestPath, weekPath, historyPath]
+  await writeFile(dailyPath, `${JSON.stringify(daily, null, 2)}\n`)
+  await writeFile(weeklyPath, `${JSON.stringify(weekly, null, 2)}\n`)
+
+  if (archivedWeek) {
+    const weekPath = join(
+      process.cwd(),
+      weekSnapshotRelativePath(weekly.window.to)
+    )
+    const nextHistory = upsertHistory(
+      history,
+      toHistoryWeek(weekly, weeklyTokenShares)
+    )
+    await mkdir(dirname(weekPath), { recursive: true })
+    await writeFile(weekPath, `${JSON.stringify(weekly, null, 2)}\n`)
+    await writeFile(historyPath, `${JSON.stringify(nextHistory, null, 2)}\n`)
+    paths.push(weekPath, historyPath)
+  }
+
+  return { paths, archivedWeek }
 }
 
 function picksFrom(
@@ -408,10 +567,12 @@ function printLaneLists(lane: SnapshotLaneKey, lists: SnapshotLists) {
 }
 
 function printReport(snapshot: GatewaySnapshot) {
-  const { window, stats, picks, lists, labs, unmatched, attribution } = snapshot
+  const { cadence, window, stats, picks, lists, labs, unmatched, attribution } =
+    snapshot
+  const label = cadence === "day" ? "daily" : "weekly"
 
   console.log(
-    `AI Gateway bang-for-buck  ·  ${window.from} → ${window.to}  ·  ${stats.languageModels} language models  ·  ${stats.privacyModels} ZDR+NPT`
+    `AI Gateway ${label}  ·  ${window.from} → ${window.to}  ·  ${stats.languageModels} language models  ·  ${stats.privacyModels} ZDR+NPT`
   )
   console.log(attribution.text)
   console.log(
@@ -493,9 +654,20 @@ function asRankedLine(
 }
 
 async function main() {
-  const { snapshot, tokenShares } = await buildGatewaySnapshot()
-  const paths = await writeSnapshot(snapshot, tokenShares)
-  printReport(snapshot)
+  const { daily, weekly, weeklyTokenShares } = await buildGatewaySnapshot()
+  const { paths, archivedWeek } = await writeSnapshot(
+    daily,
+    weekly,
+    weeklyTokenShares
+  )
+  printReport(daily)
+  printReport(weekly)
+  if (archivedWeek) {
+    console.log("\nArchived weekly snapshot")
+  } else {
+    console.log("\nSkipped weekly archive (last week is under 7 days old)")
+  }
+  console.log(`archivedWeek=${archivedWeek}`)
   console.log(`\nWrote ${paths.join("\n      ")}`)
 }
 
