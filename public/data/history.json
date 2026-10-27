@@ -962,6 +962,112 @@
         "zai/glm-5.3": 11.92092857142857,
         "zai/glm-5.3-flash": 7.894457142857143
       }
+    },
+    {
+      "week": "2026-10-27",
+      "from": "2026-10-21",
+      "generatedAt": "2026-10-27T12:26:51.051Z",
+      "href": "/data/weeks/2026-10-27.json",
+      "stats": {
+        "languageModels": 320,
+        "zdrModels": 208,
+        "privacyModels": 208,
+        "deepsecRuns": 54,
+        "aaModels": 159
+      },
+      "picks": {
+        "privacy": {
+          "bangForBuck": "deepseek/deepseek-v4.1-flash-1017",
+          "workhorse": "deepseek/deepseek-v4.1-flash-1017",
+          "cheapRouter": "zai/glm-5.3-flash",
+          "frontier": "anthropic/claude-sonnet-5.5",
+          "rising": "moonshotai/kimi-k3.1-pro"
+        },
+        "open": {
+          "bangForBuck": "deepseek/deepseek-v4.1-flash-1017",
+          "workhorse": "deepseek/deepseek-v4.1-flash-1017",
+          "cheapRouter": "zai/glm-5.3-flash",
+          "frontier": "anthropic/claude-sonnet-5.5",
+          "rising": "moonshotai/kimi-k3.1-pro"
+        }
+      },
+      "pickMetrics": {
+        "privacy": {
+          "bangForBuck": {
+            "tokensShare": 18.2765,
+            "zdrBlendedPerMillion": 0.14700000000000002,
+            "deepsecBang": 44.13950314947368,
+            "valueScore": 124.32993197278908
+          },
+          "workhorse": {
+            "tokensShare": 18.2765,
+            "zdrBlendedPerMillion": 0.14700000000000002,
+            "deepsecBang": 44.13950314947368,
+            "valueScore": 124.32993197278908
+          },
+          "cheapRouter": {
+            "tokensShare": 8.396414285714286,
+            "zdrBlendedPerMillion": 0.0422,
+            "deepsecBang": 36.3335882377741,
+            "valueScore": 198.96716316858496
+          },
+          "frontier": {
+            "tokensShare": 2.2382857142857144,
+            "zdrBlendedPerMillion": 4,
+            "deepsecBang": 0.5746235431829902,
+            "valueScore": 0.5595714285714286
+          },
+          "rising": {
+            "tokensShare": 0,
+            "zdrBlendedPerMillion": 4,
+            "deepsecBang": 5.215617187656399,
+            "valueScore": null
+          }
+        },
+        "open": {
+          "bangForBuck": {
+            "tokensShare": 18.2765,
+            "zdrBlendedPerMillion": null,
+            "deepsecBang": 44.13950314947368,
+            "valueScore": 139.24952380952382
+          },
+          "workhorse": {
+            "tokensShare": 18.2765,
+            "zdrBlendedPerMillion": null,
+            "deepsecBang": 44.13950314947368,
+            "valueScore": 139.24952380952382
+          },
+          "cheapRouter": {
+            "tokensShare": 8.396414285714286,
+            "zdrBlendedPerMillion": 0.0422,
+            "deepsecBang": 36.3335882377741,
+            "valueScore": 198.96716316858496
+          },
+          "frontier": {
+            "tokensShare": 2.2382857142857144,
+            "zdrBlendedPerMillion": null,
+            "deepsecBang": 0.5746235431829902,
+            "valueScore": 0.5595714285714286
+          },
+          "rising": {
+            "tokensShare": 0,
+            "zdrBlendedPerMillion": null,
+            "deepsecBang": 5.215617187656399,
+            "valueScore": null
+          }
+        }
+      },
+      "tokenShares": {
+        "anthropic/claude-haiku-5.5": 1.7074714285714288,
+        "anthropic/claude-opus-5.5": 5.543142857142857,
+        "anthropic/claude-sonnet-5.5": 2.2382857142857144,
+        "deepseek/deepseek-v4.1-flash": 13.0568,
+        "deepseek/deepseek-v4.1-flash-1017": 18.2765,
+        "openai/gpt-6-luna": 5.121957142857143,
+        "openai/gpt-6.1-sol": 1.9480857142857142,
+        "zai/glm-5.3": 12.32467142857143,
+        "zai/glm-5.3-flash": 8.396414285714286
+      }
     }
   ]
 }
